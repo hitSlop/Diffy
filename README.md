@@ -1,5 +1,7 @@
 # Diffy
 
+![Diffy on macOS: black interface, project rail, and compact changed-file list](assets/screenshot.png)
+
 A small native Rust/GPUI Kit diff viewer for macOS.
 
 - Pure-black surfaces and colored squircle project icons that grow gently on hover.
