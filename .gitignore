@@ -18,3 +18,10 @@
 /vendor/**/.cargo_vcs_info.json
 /vendor/**/Cargo.lock
 
+
+# Release signing keys and generated assets
+/.release-secrets/
+
+# Python script caches
+__pycache__/
+*.pyc
