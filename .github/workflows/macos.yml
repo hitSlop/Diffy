@@ -2,8 +2,10 @@ name: macOS checks
 on:
   push:
     branches: [main]
+    paths-ignore: ['**/*.md', 'assets/screenshot.png']
     tags: ['v*']
   pull_request:
+    paths-ignore: ['**/*.md', 'assets/screenshot.png']
   workflow_dispatch:
 permissions:
   contents: read
