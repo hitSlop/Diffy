@@ -1,0 +1,20 @@
+# Build outputs and local reference checkouts
+/target/
+/dist/
+/_docs/
+
+# Local secrets, logs, and editor scratch files
+.env
+.env.*
+!.env.example
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Cargo registry bookkeeping copied with vendored dependencies
+/vendor/**/.cargo-ok
+/vendor/**/.cargo_vcs_info.json
+/vendor/**/Cargo.lock
+
