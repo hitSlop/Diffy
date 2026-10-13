@@ -5,4 +5,4 @@ Diffy is a small, native Git diff viewer for Apple Silicon Macs running macOS 13
 - Separate staged and unstaged changes, with file and bulk staging controls.
 - Signed, notarized macOS app and verified in-app updates.
 
-Install by dragging Diffy to Applications. Requires Git. This initial release is prepared as a draft; Windows and Intel Mac builds are deferred.
+Install by dragging Diffy to Applications. Requires Git. Windows and Intel Mac builds are deferred.
