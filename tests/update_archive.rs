@@ -55,7 +55,14 @@ fn signed_app_archive_installs_and_relaunches_an_isolated_bundle() {
         std::env::var_os("DIFFY_TEST_UPDATE_SIGNATURE").expect("signature path required"),
     )
     .unwrap();
-    let root = std::env::temp_dir().join(format!("diffy-signed-update-{}", std::process::id()));
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "diffy-signed-update-{}-{suffix}",
+        std::process::id()
+    ));
     assert!(
         !root.exists(),
         "Use an isolated, fresh update test directory"

@@ -127,7 +127,9 @@ def main():
         print(f"Unsigned packaging checks ready in {output}")
         return
     archive = output / f"Diffy_{version}_aarch64.app.tar.gz"
-    run(["tar", "-czf", archive, "-C", output, "Diffy.app"], env)
+    # BSD tar's AppleDouble metadata is incompatible with the updater's single app root.
+    archive_env = {**env, "COPYFILE_DISABLE": "1"}
+    run(["tar", "-czf", archive, "-C", output, "Diffy.app"], archive_env)
     dmg_candidates = list(output.glob("*.dmg"))
     if len(dmg_candidates) != 1:
         raise RuntimeError("Expected exactly one packaged DMG.")

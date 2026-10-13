@@ -28,3 +28,15 @@ __pycache__/
 
 # Finder iconset resource metadata
 /assets/icon/icon.iconset/Icon?
+
+# Never commit certificate exports, provisioning profiles, or private key files
+*.p12
+*.pfx
+*.pem
+*.cer
+*.crt
+*.cert
+*.mobileprovision
+*.provisionprofile
+*.key
+!tests/fixtures/update/public.key
