@@ -1,4 +1,4 @@
-# Diffy
+# <img src="assets/icon/icon.iconset/icon_128x128.png" alt="Diffy chameleon" width="40" height="40" align="middle"> Diffy
 
 [Download the latest version for macOS](https://github.com/hitSlop/diffy/releases/latest) · Apple Silicon · macOS 13+
 
