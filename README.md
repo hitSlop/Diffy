@@ -1,5 +1,7 @@
 # Diffy
 
+[Download the latest version for macOS](https://github.com/hitSlop/diffy/releases/latest) · Apple Silicon · macOS 13+
+
 ![Diffy on macOS: black interface, project rail, and compact changed-file list](assets/screenshot.png)
 
 A small native Rust/GPUI Kit diff viewer for macOS.
