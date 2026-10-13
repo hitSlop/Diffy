@@ -25,3 +25,6 @@
 # Python script caches
 __pycache__/
 *.pyc
+
+# Finder iconset resource metadata
+/assets/icon/icon.iconset/Icon?

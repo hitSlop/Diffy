@@ -18,7 +18,7 @@ cp packaging/Info.plist "$bundle/Contents/Info.plist"
 version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $version" "$bundle/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $version" "$bundle/Contents/Info.plist"
-iconutil -c icns assets/icon/icon.iconset -o "$bundle/Contents/Resources/Diffy.icns"
+python3 scripts/build-icon.py "$bundle/Contents/Resources/Diffy.icns"
 cp LICENSE "$bundle/Contents/Resources/LICENSE.txt"
 cp assets/fonts/LICENSE "$bundle/Contents/Resources/CommitMono-LICENSE.txt"
 cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/Third-party-notices.md"
