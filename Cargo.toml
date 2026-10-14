@@ -1,6 +1,6 @@
 [package]
 name = "diffy"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "A small desktop Git diff viewer"
 publish = false
@@ -19,6 +19,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 cargo-packager-updater = { git = "https://github.com/crabnebula-dev/cargo-packager", rev = "0a3ea3a089363b7e77dfca238be5bbcf3f4d75f6" }
 ignore = "=0.4.33"
 notify = "=8.2.0"
+nucleo-matcher = "=0.3.1"
 async-channel = "=2.5.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"

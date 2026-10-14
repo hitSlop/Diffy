@@ -1,0 +1,114 @@
+<div class="mascot character" data-mascot>
+  <img src="/chameleon.webp" width="160" height="160" alt="Diffy’s colorful chameleon" fetchpriority="high" />
+  <svg class="mascot-eye" viewBox="0 0 1254 1254" aria-hidden="true" focusable="false">
+    <defs>
+      <path id="diffy-eye-opening" d="M526 720C492 624 552 541 651 513C771 479 892 510 934 612C979 721 911 829 799 866C685 908 568 862 526 720Z" />
+      <clipPath id="diffy-eye-clip"><use href="#diffy-eye-opening" /></clipPath>
+      <radialGradient id="diffy-sclera" cx="68%" cy="26%" r="85%">
+        <stop offset="0" stop-color="#fffef2" /><stop offset=".35" stop-color="#fffef5" /><stop offset=".68" stop-color="#c0ffac" /><stop offset=".91" stop-color="#5aeb77" /><stop offset="1" stop-color="#19ba57" />
+      </radialGradient>
+      <radialGradient id="diffy-pupil" cx="35%" cy="15%" r="95%">
+        <stop offset="0" stop-color="#474c51" /><stop offset=".3" stop-color="#101519" /><stop offset=".7" stop-color="#010806" /><stop offset=".9" stop-color="#082b17" /><stop offset="1" stop-color="#11150a" />
+      </radialGradient>
+      <linearGradient id="diffy-pupil-edge" x1="0" y1="0" x2="1" y2="1">
+        <stop stop-color="#111713" /><stop offset=".5" stop-color="#010500" /><stop offset="1" stop-color="#385422" />
+      </linearGradient>
+    </defs>
+    <g clip-path="url(#diffy-eye-clip)">
+      <use href="#diffy-eye-opening" fill="url(#diffy-sclera)" />
+      <g data-pupil>
+        <g transform="rotate(-12 750 690)">
+          <ellipse cx="750" cy="690" rx="100" ry="124" fill="url(#diffy-pupil)" stroke="url(#diffy-pupil-edge)" stroke-width="7" />
+          <ellipse cx="790" cy="623" rx="27" ry="34" fill="#fff" />
+        </g>
+      </g>
+    </g>
+  </svg>
+</div>
+
+<script>
+  const mascot = document.querySelector<HTMLElement>('[data-mascot]');
+  const pupil = mascot?.querySelector<SVGGElement>('[data-pupil]');
+  if (mascot && pupil) {
+    const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    let visible = false;
+    let enabled = false;
+    let frame = 0;
+    let previousTime = 0;
+    let x = 0, y = 0, targetX = 0, targetY = 0;
+    let lastPointer: { x: number; y: number } | undefined;
+
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      previousTime = 0;
+    };
+    const paint = () => pupil.setAttribute('transform', `translate(${x.toFixed(2)} ${y.toFixed(2)})`);
+    const animate = (time: number) => {
+      frame = 0;
+      if (!enabled || !visible || document.hidden) return;
+      const dt = previousTime ? Math.min((time - previousTime) / 1000, .05) : 1 / 60;
+      previousTime = time;
+      const ease = 1 - Math.exp(-14 * dt);
+      x += (targetX - x) * ease;
+      y += (targetY - y) * ease;
+      if (Math.abs(targetX - x) + Math.abs(targetY - y) < .08) {
+        x = targetX;
+        y = targetY;
+        previousTime = 0;
+      } else {
+        frame = requestAnimationFrame(animate);
+      }
+      paint();
+    };
+    const start = () => {
+      if (enabled && visible && !document.hidden && !frame) frame = requestAnimationFrame(animate);
+    };
+    const neutral = () => {
+      lastPointer = undefined;
+      targetX = targetY = 0;
+      start();
+    };
+    const aim = () => {
+      if (!enabled || !visible || !lastPointer) return;
+      const box = mascot.getBoundingClientRect();
+      const dx = lastPointer.x - (box.left + box.width * 750 / 1254);
+      const dy = lastPointer.y - (box.top + box.height * 690 / 1254);
+      const distance = Math.hypot(dx, dy);
+      // Six/four pixels of travel at 160px, expressed in the artwork's coordinates.
+      const strength = Math.min(distance / 180, 1);
+      targetX = distance ? dx / distance * strength * 47 : 0;
+      targetY = distance ? dy / distance * strength * 31 : 0;
+      mascot.classList.add('is-tracking');
+      start();
+    };
+    const configure = () => {
+      enabled = finePointer.matches && !reducedMotion.matches;
+      stop();
+      x = y = targetX = targetY = 0;
+      paint();
+      mascot.classList.remove('is-tracking');
+      if (enabled) aim();
+    };
+    new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible) { aim(); start(); } else stop();
+    }).observe(mascot);
+    window.addEventListener('pointermove', (event) => {
+      if (event.pointerType !== 'mouse' || !enabled || !visible) return;
+      lastPointer = { x: event.clientX, y: event.clientY };
+      aim();
+    }, { passive: true });
+    document.documentElement.addEventListener('pointerleave', neutral);
+    window.addEventListener('blur', neutral);
+    window.addEventListener('resize', aim, { passive: true });
+    window.addEventListener('scroll', aim, { passive: true });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { neutral(); stop(); } else start();
+    });
+    finePointer.addEventListener('change', configure);
+    reducedMotion.addEventListener('change', configure);
+    configure();
+  }
+</script>

@@ -1,10 +1,9 @@
-Diffy 0.2.0 adds project discovery and faster, clearer project browsing.
+Diffy 0.2.1 makes changed files easier to find and diffs easier to navigate.
 
-- Import local Git projects from Herdr, Codex, and Claude Code. Choose projects and optionally discover new ones automatically.
-- Recently created projects appear first; missing directories and non-Git folders are hidden. Shared projects have synchronized selection across sources.
-- Project badges count changed files, and compact folder grouping makes files easier to browse.
-- Improved live refresh, cached metadata reads, keyboard navigation, and platform-aware shortcut hints.
-- Open repositories with `diffy .`, install the CLI from the command palette, and open projects through `diffy://` links.
-- Fixed import scrolling, checkbox interaction, and compatibility with older Codex and large Claude metadata records.
+- Find changed files with fuzzy path search. Press ⌘F to focus the search field; file navigation follows the filtered list.
+- Browse files under compact folder headers with counts, consistent indentation, and full-path tooltips.
+- Hold Command while scrolling vertically to move between files. Horizontal gestures still pan the diff.
+- Spot offscreen additions and deletions with green and red marks in a single strip on the right of the scrollbar. Markers remain visible without covering the thumb or blocking scrolling.
+- Added the Diffy website and a stable download asset name for future releases.
 
 Install by dragging Diffy to Applications. Requires Git. Windows and Intel Mac builds are deferred.

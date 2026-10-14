@@ -2,16 +2,16 @@
 
 [Download the latest version for macOS](https://github.com/hitSlop/diffy/releases/latest) · Apple Silicon · macOS 13+
 
-![Diffy on macOS: black interface, project rail, and compact changed-file list](assets/screenshot.png)
+![Diffy on macOS: split diff, project change badges, and a searchable file list grouped by directory](assets/screenshot.png)
 
 A small native Rust/GPUI Kit diff viewer for macOS.
 
 - Pure-black surfaces and colored squircle project icons that grow gently on hover. Badges count unique changed files across Staged and Changes (partially staged files count once).
 - Bundled Commit Mono Regular and Medium throughout the app, with programming ligatures disabled.
-- A compact alphabetical file list with aligned paths and subtle spacing between directories on the right and one selected diff in the center. Filenames stay prominent; directory prefixes are dimmed and shortened in the middle when needed. Hover shows the complete path.
+- A compact alphabetical file list on the right and one selected diff in the center. Files are grouped under their folder. A nested folder reads as `src · app`, with the ancestor dimmed and shortened in the middle when it is long. Filenames are indented under that header and shortened in the middle when needed. Root files stay flush. Hover shows the complete path. Find file, under the scope header, filters the list with nucleo. ⌘F focuses it. Stage all / Unstage all still cover the whole scope.
 - **Staged** first, then **Changes**, with separate counts. Changes is selected initially.
 - Staged compares HEAD with the index; Changes compares the index with disk and includes untracked files. A file can appear in both views.
-- Unified or split diffs with highlighting, inline changes, expandable context, source selection, and copying. Long lines wrap; split mode gives 40% to the original and 60% to the modified source. Added files fill one pane.
+- Unified or split diffs with highlighting, inline changes, expandable context, source selection, and copying. Long lines wrap; split mode gives 40% to the original and 60% to the modified source. Added files fill one pane. Red and green marks beside the scrollbar show where further changes appear when the diff needs scrolling.
 - Hover **+ / −** actions in file rows and the preview header for whole-file staging/unstaging. Row actions affect that row without selecting it.
 - Sticky **Stage all / Unstage all** below the file list runs one Git operation for the current scope; it is also available in the command palette.
 - A searchable **⌘P** palette for switching projects and executing commands.
@@ -72,6 +72,8 @@ CLI installation is currently macOS-only. Development binaries still accept repo
 | ⌘O | Open repositories |
 | ⌘⇧↓ / ⌘⇧↑ | Next / previous project |
 | ⌘↓ / ⌘↑ | Next / previous file |
+| ⌘ + vertical scroll | Move between files |
+| ⌘F | Find a changed file |
 | ⌘⇧S | Toggle Staged / Changes |
 | ⌘S | Stage file in Changes; unstage file in Staged |
 | ⌘R | Refresh repository |
@@ -112,7 +114,7 @@ Git tests run in disposable repositories and cover independent scopes, index pre
 
 Repositories refresh automatically after file and Git metadata changes, with a short debounce. Linked worktree metadata is watched too; ⌘R remains available. Background edits preserve the visible source-line anchor when it still exists, and unrelated file changes retain the current preview. Diff panes are bounded, and overflow scrollbars stay visible. A narrow GPUI Component patch fixes offscreen row estimates for large-file scrolling; see [vendor/README.md](vendor/README.md).
 
-This POC loads full patches in the background. Remote machines, Herdr discovery, advanced diff engines, and exact scroll-position restoration across launches remain later work.
+This POC loads full patches in the background. Remote machines, advanced diff engines, and exact scroll-position restoration across launches remain later work.
 
 Built with [GPUI Kit](https://gpui-kit.com/) and [Commit Mono](https://commitmono.com/). See [plan.md](plan.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 

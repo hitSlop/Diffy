@@ -11,9 +11,15 @@ state, renderer, and document modules:
 3. Render added files as one full-width column in either display mode.
 4. Expose `Diff::split_ratio` (default 0.5). Differ uses 0.4 with soft wrapping
    to keep both sides visible and give the modified version more space.
+5. Paint red and green change markers in one strip at the right edge of an
+   overflowing diff. Read geometry during paint and cache changed ranges when
+   rows rebuild. The strip leaves the scrollbar thumb and pointer events clear;
+   its row-based positions are approximate when lines wrap.
 
 Differ selects this package with a Cargo patch. The native integration test in
 `tests/ui.rs` verifies wheel/keyboard scrolling to the last line of a 3,000-line
 file with a very long wrapped line, both diff modes, pixel-precise wheel movement, full-width additions, and reading-position retention
 while live edits arrive. Keep these tests when removing the patch after an
-upstream fix. Upstream licensing is in `gpui-component/LICENSE-APACHE`.
+upstream fix. `tests/ui/scrollbar.rs` also checks marker pixels on the first
+frame, both diff modes, resizing, folding, file changes, and pointer interactions.
+Upstream licensing is in `gpui-component/LICENSE-APACHE`.

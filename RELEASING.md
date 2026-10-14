@@ -41,6 +41,7 @@ The script builds the ARM64 executable and supplied icon, collects dependency li
 Final assets under `dist/release`:
 
 - `Diffy_<version>_aarch64.dmg`
+- `Diffy-macos-aarch64.dmg`: byte-identical fixed-name copy for the website's permanent download link
 - `Diffy_<version>_aarch64.app.tar.gz`
 - The archive's `.sig` file
 - `update-macos-aarch64.json`
@@ -53,25 +54,28 @@ Notarization reports stay local. Never upload `.release-secrets`, VISIONCAL cred
 Commit the validated source, push `main`, and tag the exact release commit. Create a draft rather than publishing:
 
 ```sh
-git tag v0.2.0
-git push origin main v0.2.0
-gh release create v0.2.0 --repo hitSlop/diffy --draft --verify-tag \
-  --title 'Diffy v0.2.0' --notes-file packaging/release-notes.md \
-  dist/release/Diffy_0.2.0_aarch64.dmg \
-  dist/release/Diffy_0.2.0_aarch64.app.tar.gz \
-  dist/release/Diffy_0.2.0_aarch64.app.tar.gz.sig \
+git tag v0.2.1
+git push origin main v0.2.1
+gh release create v0.2.1 --repo hitSlop/diffy --draft --verify-tag \
+  --title 'Diffy v0.2.1' --notes-file packaging/release-notes.md \
+  dist/release/Diffy_0.2.1_aarch64.dmg \
+  dist/release/Diffy-macos-aarch64.dmg \
+  dist/release/Diffy_0.2.1_aarch64.app.tar.gz \
+  dist/release/Diffy_0.2.1_aarch64.app.tar.gz.sig \
   dist/release/update-macos-aarch64.json dist/release/SHA256SUMS
 ```
 
 The manifest archive URL points to its immutable version tag. The app checks `releases/latest/download/update-macos-aarch64.json`, so draft releases are intentionally invisible to automatic checks. Publish only after release verification and explicit release authorization.
+
+Always upload the fixed-name DMG with every release. The website redirects `https://diffy.hitslop.com/download` to GitHub's latest published release asset with that name. Include both DMGs in `SHA256SUMS`; retain the versioned app archive and manifest used by in-app updates.
 
 ## Update verification
 
 The automated suite covers preference migration, update state transitions, Git write gating, transport validation, real signature verification, corrupted payloads, and existing application behavior. To exercise the real app archive on isolated bundle copies:
 
 ```sh
-DIFFY_TEST_UPDATE_ARCHIVE="$PWD/dist/release/Diffy_0.2.0_aarch64.app.tar.gz" \
-DIFFY_TEST_UPDATE_SIGNATURE="$PWD/dist/release/Diffy_0.2.0_aarch64.app.tar.gz.sig" \
+DIFFY_TEST_UPDATE_ARCHIVE="$PWD/dist/release/Diffy_0.2.1_aarch64.app.tar.gz" \
+DIFFY_TEST_UPDATE_SIGNATURE="$PWD/dist/release/Diffy_0.2.1_aarch64.app.tar.gz.sig" \
 cargo test --locked --test update_archive -- --nocapture
 ```
 

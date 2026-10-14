@@ -56,6 +56,7 @@ gpui_kit::actions!(
         NextChange,
         PreviousChange,
         FocusDiff,
+        FocusFileSearch,
         ToggleGroup,
         StageFile,
         StageAll,
@@ -124,6 +125,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("alt-down", NextChange, Some("Diffy")),
         KeyBinding::new("alt-up", PreviousChange, Some("Diffy")),
         KeyBinding::new("secondary-enter", FocusDiff, Some("Diffy")),
+        KeyBinding::new("secondary-f", FocusFileSearch, Some("Diffy")),
         KeyBinding::new("secondary-shift-s", ToggleGroup, Some("Diffy")),
         KeyBinding::new("secondary-s", StageFile, Some("Diffy")),
         KeyBinding::new("secondary-q", Quit, Some("Diffy")),
@@ -148,6 +150,8 @@ pub struct Diffy {
     repeat_direction: Option<isize>,
     file_repeat: Option<Task<()>>,
     file_key_probe: fn(isize) -> bool,
+    file_scroll_remainder: f32,
+    file_scroll_axis: Option<files::FileScrollAxis>,
     navigation_save: Option<Task<()>>,
     persisted_state: Option<state::SavedState>,
     updates: updates::Controller,
@@ -188,6 +192,7 @@ impl Render for Diffy {
             .child(hint(&[&OpenCommandPalette], "Commands"))
             .child(hint(&[&PreviousProject, &NextProject], "Projects"))
             .child(hint(&[&PreviousFile, &NextFile], "Files"))
+            .child(hint(&[&FocusFileSearch], "Find"))
             .child(hint(&[&ToggleGroup], "View"))
             .child(hint(
                 &[&StageFile],
@@ -234,6 +239,9 @@ impl Render for Diffy {
             .text_size(px(13.))
             .text_color(cx.theme().foreground)
             .on_key_up(cx.listener(|this, _, _, _| this.stop_file_repeat()))
+            .on_modifiers_changed(cx.listener(|this, event: &gpui_kit::ModifiersChangedEvent, _, _| {
+                this.reset_file_scroll_unless_command(event);
+            }))
             .on_action(cx.listener(|this, a: &EditProject, w, cx| this.open_settings(a.id, w, cx)))
             .on_action(cx.listener(|this, _: &StageAll, _, cx| this.stage_all(cx)))
             .on_action(cx.listener(|this, _: &OpenProject, w, cx| this.open_project(w, cx)))
@@ -269,6 +277,9 @@ impl Render for Diffy {
             .on_action(cx.listener(|this, _: &NextChange, _, cx| this.change(true, cx)))
             .on_action(cx.listener(|this, _: &PreviousChange, _, cx| this.change(false, cx)))
             .on_action(cx.listener(|this, _: &FocusDiff, w, cx| this.focus_diff(w, cx)))
+            .on_action(cx.listener(|this, _: &FocusFileSearch, w, cx| {
+                this.focus_file_search(w, cx)
+            }))
             .on_action(cx.listener(|this, _: &CheckForUpdates, _, cx| this.check_updates(true, cx)))
             .on_action(cx.listener(|this, _: &InstallUpdate, _, cx| this.install_update(cx)))
             .on_action(cx.listener(|_, _: &Hide, _, cx| cx.hide()))
@@ -283,6 +294,7 @@ impl Render for Diffy {
                 this.persist(cx);
                 cx.quit();
             }))
+            .child(self.file_scroll_layer(cx))
             .children(self.state_error.as_ref().map(|error| {
                 div()
                     .px_3()

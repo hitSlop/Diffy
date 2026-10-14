@@ -1,4 +1,5 @@
-// Differ modifications: preserve offscreen height hints and live source position.
+// Differ modifications: preserve offscreen height hints, live source position,
+// and scrollbar change marks.
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -61,6 +62,85 @@ impl DisplayRow {
             | Self::Conflict { file, .. }
             | Self::Code { file, .. } => *file,
         }
+    }
+}
+
+/// How a changed code row colors the scrollbar track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ChangeKind {
+    /// Modified side only.
+    Added,
+    /// Original side only.
+    Removed,
+    /// Both sides of one split row.
+    Edited,
+}
+
+/// One band of adjacent rows that share a [`ChangeKind`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ChangeMark {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) kind: ChangeKind,
+}
+
+/// Scrollbar bands for changed rows. Neighbors of the same kind merge.
+/// Folds, headers, and unchanged lines stay empty and split a run, so a
+/// band's row range still lines up with the scrollbar.
+pub(crate) fn change_marks(rows: &[DisplayRow]) -> Vec<ChangeMark> {
+    let mut marks = Vec::new();
+    let mut current: Option<ChangeMark> = None;
+    for (ix, row) in rows.iter().enumerate() {
+        let Some(kind) = change_kind(row) else {
+            if let Some(mark) = current.take() {
+                marks.push(mark);
+            }
+            continue;
+        };
+        match current {
+            Some(mark) if mark.kind == kind => {
+                current = Some(ChangeMark {
+                    end: ix + 1,
+                    ..mark
+                })
+            }
+            Some(mark) => {
+                marks.push(mark);
+                current = Some(ChangeMark {
+                    start: ix,
+                    end: ix + 1,
+                    kind,
+                });
+            }
+            None => {
+                current = Some(ChangeMark {
+                    start: ix,
+                    end: ix + 1,
+                    kind,
+                })
+            }
+        }
+    }
+    if let Some(mark) = current {
+        marks.push(mark);
+    }
+    marks
+}
+
+fn change_kind(row: &DisplayRow) -> Option<ChangeKind> {
+    match row {
+        DisplayRow::Code {
+            original,
+            modified,
+            changed: true,
+            ..
+        } => match (original.is_some(), modified.is_some()) {
+            (true, false) => Some(ChangeKind::Removed),
+            (false, true) => Some(ChangeKind::Added),
+            (true, true) => Some(ChangeKind::Edited),
+            (false, false) => None,
+        },
+        _ => None,
     }
 }
 
@@ -216,6 +296,7 @@ pub struct DiffState {
     header_rows: Vec<usize>,
     rows: Rc<Vec<DisplayRow>>,
     change_rows: Vec<usize>,
+    change_marks: Rc<Vec<ChangeMark>>,
     list: ListState,
     horizontal_scroll: ScrollHandle,
     focus: FocusHandle,
@@ -345,6 +426,7 @@ impl DiffState {
             header_rows: Vec::new(),
             rows: Rc::default(),
             change_rows: Vec::new(),
+            change_marks: Rc::default(),
             list: ListState::new(0, ListAlignment::Top, px(0.)),
             horizontal_scroll: ScrollHandle::new(),
             focus,
@@ -515,6 +597,9 @@ impl DiffState {
 
     pub(crate) fn rows(&self) -> &Rc<Vec<DisplayRow>> {
         &self.rows
+    }
+    pub(crate) fn change_marks(&self) -> &Rc<Vec<ChangeMark>> {
+        &self.change_marks
     }
     pub(crate) fn list(&self) -> &ListState {
         &self.list
@@ -1293,6 +1378,7 @@ impl DiffState {
         let rows = self.project_rows();
         self.file_rows = source_rows(&self.files, &rows);
         self.change_rows = changed_groups(&rows);
+        self.change_marks = Rc::new(change_marks(&rows));
         self.header_rows = rows
             .iter()
             .enumerate()
@@ -1760,5 +1846,97 @@ fn project_conflicts(
             file,
             pairs: start..ix,
         });
+    }
+}
+
+#[cfg(test)]
+mod mark_tests {
+    use super::*;
+
+    fn changed(original: bool, modified: bool) -> DisplayRow {
+        DisplayRow::Code {
+            file: 0,
+            original: original.then_some(1),
+            modified: modified.then_some(1),
+            changed: true,
+        }
+    }
+
+    fn unchanged() -> DisplayRow {
+        DisplayRow::Code {
+            file: 0,
+            original: Some(1),
+            modified: Some(1),
+            changed: false,
+        }
+    }
+
+    #[test]
+    fn change_marks_merge_same_kind_and_keep_gaps() {
+        let rows = vec![
+            DisplayRow::File(0),
+            changed(false, true),
+            changed(false, true),
+            unchanged(),
+            changed(false, true),
+            DisplayRow::Hunk { file: 0, hunk: 0 },
+            changed(true, false),
+            changed(true, true),
+            DisplayRow::Fold {
+                file: 0,
+                pairs: 0..4,
+            },
+            changed(true, true),
+            DisplayRow::Notice(0),
+            DisplayRow::Conflict {
+                file: 0,
+                conflict: 0,
+                part: ConflictPart::Current,
+            },
+            changed(false, true),
+        ];
+        assert_eq!(
+            change_marks(&rows),
+            vec![
+                ChangeMark {
+                    start: 1,
+                    end: 3,
+                    kind: ChangeKind::Added,
+                },
+                ChangeMark {
+                    start: 4,
+                    end: 5,
+                    kind: ChangeKind::Added,
+                },
+                ChangeMark {
+                    start: 6,
+                    end: 7,
+                    kind: ChangeKind::Removed,
+                },
+                ChangeMark {
+                    start: 7,
+                    end: 8,
+                    kind: ChangeKind::Edited,
+                },
+                ChangeMark {
+                    start: 9,
+                    end: 10,
+                    kind: ChangeKind::Edited,
+                },
+                ChangeMark {
+                    start: 12,
+                    end: 13,
+                    kind: ChangeKind::Added,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn change_marks_skip_rows_without_a_change() {
+        assert!(change_marks(&[]).is_empty());
+        assert!(
+            change_marks(&[DisplayRow::File(0), unchanged(), DisplayRow::Notice(0)]).is_empty()
+        );
     }
 }
