@@ -167,6 +167,7 @@ fn install_at(destination: &Path, executable: &Path) -> Result<(), String> {
         file.write_all(script.as_bytes())?;
         file.set_permissions(fs::Permissions::from_mode(0o755))?;
         file.sync_all()?;
+        drop(file);
         if replacing {
             fs::rename(&temporary, destination)
         } else {
@@ -238,18 +239,33 @@ mod tests {
     #[test]
     fn installer_preserves_conflicts_and_quotes_arguments() {
         use std::fs;
-        let root = std::env::temp_dir().join(format!("diffy-cli-{}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
         let destination = root.join("bin/diffy");
         let executable = root.join("app with ' quotes");
         fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n").unwrap();
         use std::os::unix::fs::PermissionsExt as _;
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
         install_at(&destination, &executable).unwrap();
-        let output = std::process::Command::new(&destination)
-            .arg("space 日本語 $(nope)")
-            .output()
-            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        let output = loop {
+            match std::process::Command::new(&destination)
+                .arg("space 日本語 $(nope)")
+                .output()
+            {
+                // Concurrent tests spawn processes while this executable is
+                // written. A forked child can briefly inherit its write fd,
+                // even after this thread closes it (Linux ETXTBSY).
+                Err(error)
+                    if cfg!(target_os = "linux")
+                        && error.raw_os_error() == Some(26)
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                result => break result.unwrap(),
+            }
+        };
         assert!(output.status.success());
         assert_eq!(
             String::from_utf8(output.stdout).unwrap(),
@@ -265,6 +281,5 @@ mod tests {
         fs::remove_file(&destination).unwrap();
         std::os::unix::fs::symlink(&executable, &destination).unwrap();
         assert!(install_at(&destination, &executable).is_err());
-        fs::remove_dir_all(root).unwrap();
     }
 }
