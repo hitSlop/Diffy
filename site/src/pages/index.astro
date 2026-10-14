@@ -23,9 +23,9 @@ if (checkout) {
       <p class="agent-line">Keep up with your agents’ changes.</p>
       <p class="compatibility">Apple Silicon <span aria-hidden="true">·</span> macOS 13+ <span aria-hidden="true">·</span> Requires Git</p>
       <div class="purchase">
-        {purchaseUrl ? <a class="button" href={purchaseUrl}>Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></a> : <button class="button" disabled aria-describedby="checkout-note">Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></button>}
+        {purchaseUrl ? <a target="_blank" rel="noopener" class="button" href={purchaseUrl}>Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></a> : <button class="button" disabled aria-describedby="checkout-note">Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></button>}
         {!purchaseUrl && <p id="checkout-note" class="checkout-note">Checkout coming soon.</p>}
-        <a class="build-link" href="https://github.com/hitSlop/Diffy">Or build for free <span aria-hidden="true">↗</span></a>
+        <a target="_blank" rel="noopener" class="build-link" href="https://github.com/hitSlop/Diffy">Or build for free <span aria-hidden="true">↗</span></a>
         <p class="support-note">Your purchase supports Diffy.</p>
       </div>
     </section>
