@@ -83,6 +83,8 @@ def main():
     if args.prepare_dmg:
         prepare_dmg(env)
         return
+    run(["git", "diff", "--quiet"], env)
+    run(["git", "diff", "--cached", "--quiet"], env)
     # Isolate packaging from signing environment inherited from other projects.
     env = {k: v for k, v in env.items() if not k.startswith("CARGO_PACKAGER_")}
     version = json.loads(run(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], env, True))["packages"][0]["version"]

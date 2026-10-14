@@ -201,6 +201,7 @@ fn open_window(
         ..TitleBar::window_options()
     };
     if !cfg!(target_os = "macos") {
+        options.app_owns_titlebar_drag = false;
         // Keep the OS/window-manager decorations: the existing app layout does
         // not render GPUI Component's custom minimize/maximize/close controls.
         options.titlebar = Some(gpui_kit::TitlebarOptions {

@@ -59,6 +59,22 @@ fn endpoint(directory: &Path) -> io::Result<interprocess::local_socket::Name<'st
             .map(|name| name.into_owned())
     }
 }
+fn connect(directory: &Path, deadline: Instant) -> io::Result<Stream> {
+    #[cfg(windows)]
+    {
+        interprocess::local_socket::ConnectOptions::new()
+            .name(endpoint(directory)?)
+            .wait_mode(interprocess::ConnectWaitMode::Timeout(
+                deadline.saturating_duration_since(Instant::now()),
+            ))
+            .connect_sync()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = deadline;
+        Stream::connect(endpoint(directory)?)
+    }
+}
 
 fn runtime_directory(state: &Path) -> io::Result<PathBuf> {
     let parent = state.parent().ok_or(io::ErrorKind::InvalidInput)?;
@@ -124,7 +140,7 @@ fn start_in(
         Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
             let deadline = Instant::now() + TIMEOUT;
             loop {
-                match Stream::connect(endpoint(directory)?) {
+                match connect(directory, deadline) {
                     Ok(mut stream) => {
                         stream.set_nonblocking(true)?;
                         let mut request = serde_json::to_vec(&Request { version: 1, paths })
@@ -208,6 +224,7 @@ fn send(stream: &mut Stream, mut bytes: &[u8], deadline: Instant) -> io::Result<
             return Err(io::ErrorKind::TimedOut.into());
         }
         match stream.write(bytes) {
+            Ok(0) if cfg!(windows) => thread::sleep(Duration::from_millis(5)),
             Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
             Ok(count) => bytes = &bytes[count..],
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
@@ -226,6 +243,9 @@ fn receive(stream: &mut Stream, deadline: Instant) -> io::Result<Vec<u8>> {
         }
         let mut chunk = [0; 4096];
         match stream.read(&mut chunk) {
+            // Windows PIPE_NOWAIT can report an empty pipe as a zero-byte read
+            // with this interprocess snapshot. Treat it as pending until the deadline.
+            Ok(0) if cfg!(windows) => thread::sleep(Duration::from_millis(5)),
             Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
             Ok(count) => {
                 bytes.extend_from_slice(&chunk[..count]);

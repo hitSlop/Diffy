@@ -8,6 +8,30 @@ fn main() {
 }
 fn run() -> Result<(), String> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let current = std::env::current_exe().map_err(|e| e.to_string())?;
+    let parent = current.parent().ok_or("Couldn't locate the launcher")?;
+    let config = parent.join("diffy-launch.json");
+    if config.exists() {
+        let gui = diffy::cli::launcher_target(&config)?;
+        let console = gui
+            .parent()
+            .ok_or("Invalid application directory")?
+            .join("diffy-cli.exe");
+        if !console.is_file() || console == current {
+            return Err("Reinstall the terminal command from Diffy.".into());
+        }
+        // Delegate even --version and --check so an installed shim always uses
+        // the console binary shipped by the latest application update.
+        let status = std::process::Command::new(console)
+            .args(args)
+            .status()
+            .map_err(|e| e.to_string())?;
+        return if status.success() {
+            Ok(())
+        } else {
+            Err("The Diffy command failed.".into())
+        };
+    }
     if args.iter().any(|arg| arg == "--version") {
         println!("Diffy {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -37,14 +61,7 @@ fn run() -> Result<(), String> {
         }
         return Ok(());
     }
-    let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    let parent = current.parent().ok_or("Couldn't locate the launcher")?;
-    let config = parent.join("diffy-launch.json");
-    let executable: std::path::PathBuf = if config.exists() {
-        diffy::cli::launcher_target(&config)?
-    } else {
-        parent.join(if cfg!(windows) { "diffy.exe" } else { "diffy" })
-    };
+    let executable = parent.join(if cfg!(windows) { "diffy.exe" } else { "diffy" });
     if !executable.is_file() || executable == current {
         return Err("Reinstall the terminal command from Diffy.".into());
     }

@@ -362,7 +362,39 @@ impl Package for Update {
                 }
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        {
+            // Spawn the verified installer directly. The dependency's Windows
+            // adapter routes through PowerShell and panics on spawn failure;
+            // this boundary preserves a recoverable error and literal arguments.
+            use std::{io::Write as _, os::windows::process::CommandExt as _};
+            let mut file = tempfile::Builder::new()
+                .suffix(".exe")
+                .tempfile()
+                .map_err(|e| e.to_string())?;
+            file.write_all(&bytes).map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+            let (handle, path) = file.keep().map_err(|e| e.to_string())?;
+            drop(handle);
+            let arguments = self
+                .config
+                .windows
+                .as_ref()
+                .and_then(|windows| windows.installer_args.as_ref());
+            let result = std::process::Command::new(&path)
+                .arg("/P")
+                .args(arguments.into_iter().flatten())
+                .creation_flags(0x08000000)
+                .spawn();
+            if let Err(error) = result {
+                let _ = std::fs::remove_file(path);
+                return Err(format!("Couldn't start the update installer: {error}"));
+            }
+            // The installer replaces the running image and relaunches with /R.
+            // The UI has flushed settings and waited for Git writes before here.
+            std::process::exit(0);
+        }
+        #[cfg(all(not(target_os = "macos"), not(windows)))]
         Update::install(self, bytes).map_err(|e| format!("Couldn't install the update: {e}"))
     }
 }

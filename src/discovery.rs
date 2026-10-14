@@ -655,6 +655,7 @@ fn read_herdr_socket(
         } else {
             let mut chunk = [0; 8192];
             match stream.read(&mut chunk) {
+                Ok(0) if cfg!(windows) => {}
                 Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
                 Ok(n) => {
                     reply.extend_from_slice(&chunk[..n]);

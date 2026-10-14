@@ -31,6 +31,8 @@ def main():
     if platform.system().lower() != args.platform:
         parser.error("Build on the target operating system with its native toolchain.")
     target, package_format, stable_name = TARGETS[args.platform]
+    for check in (["git", "diff", "--quiet"], ["git", "diff", "--cached", "--quiet"]):
+        subprocess.run(check, cwd=ROOT, check=True)
     env = {key: value for key, value in os.environ.items() if not key.startswith("CARGO_PACKAGER_")}
     tools = ROOT / "target/tools/bin"
     env["PATH"] = str(tools) + os.pathsep + env.get("PATH", "")
