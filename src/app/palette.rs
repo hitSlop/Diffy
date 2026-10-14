@@ -9,10 +9,12 @@ use super::InstallUpdate;
 use super::NextChange;
 use super::NextFile;
 use super::NextProject;
+use super::NextWorktree;
 use super::OpenProject;
 use super::PreviousChange;
 use super::PreviousFile;
 use super::PreviousProject;
+use super::PreviousWorktree;
 use super::Quit;
 use super::Refresh;
 use super::RemoveCurrentProject;
@@ -95,15 +97,28 @@ impl Diffy {
                 && !p.loading
                 && p.view().selected_entry().is_some_and(|e| e.stageable())
         });
-        let projects = CommandGroup::new()
-            .label("Projects")
-            .items(self.projects.iter().map(|p| {
+        let projects =
+            CommandGroup::new()
+                .label("Projects")
+                .items(self.project_rows().into_iter().map(|ix| {
+                    let p = &self.projects[ix];
+                    CommandItem::new()
+                        .label(self.appearance(p).0.clone())
+                        .keywords(p.path.iter().map(|p| p.display().to_string()))
+                        .checked(self.same_repository(ix, self.active))
+                        .action(Box::new(SelectProject { id: p.id }))
+                }));
+        let worktrees = CommandGroup::new().label("Worktrees").items(
+            self.worktree_indices(self.active).into_iter().map(|ix| {
+                let p = &self.projects[ix];
                 CommandItem::new()
-                    .label(p.name.clone())
+                    .label(self.worktree_label(ix))
                     .keywords(p.path.iter().map(|p| p.display().to_string()))
-                    .checked(self.active_project_id() == Some(p.id))
+                    .checked(ix == self.active)
+                    .disabled(!p.available)
                     .action(Box::new(SelectProject { id: p.id }))
-            }));
+            }),
+        );
         let item = |label: &str, action: Box<dyn Action>, disabled: bool| {
             CommandItem::new()
                 .label(label.to_owned())
@@ -130,12 +145,22 @@ impl Diffy {
             item(
                 "Next project",
                 Box::new(NextProject),
-                self.projects.len() < 2,
+                self.project_count() < 2,
             ),
             item(
                 "Previous project",
                 Box::new(PreviousProject),
-                self.projects.len() < 2,
+                self.project_count() < 2,
+            ),
+            item(
+                "Next worktree",
+                Box::new(NextWorktree),
+                self.worktree_indices(self.active).len() < 2,
+            ),
+            item(
+                "Previous worktree",
+                Box::new(PreviousWorktree),
+                self.worktree_indices(self.active).len() < 2,
             ),
             item("Next file", Box::new(NextFile), !has_files),
             item("Previous file", Box::new(PreviousFile), !has_files),
@@ -269,6 +294,7 @@ impl Diffy {
                                     .max_h(px(360.))
                                     .placeholder("Search projects and commands…")
                                     .group(projects)
+                                    .group(worktrees)
                                     .group(commands)
                                     .on_confirm(move |_, window, cx| {
                                         let owner = confirm.clone();

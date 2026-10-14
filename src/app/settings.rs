@@ -54,9 +54,9 @@ impl Diffy {
         }
         self.stop_file_repeat();
         let p = self.projects.iter().find(|p| p.id == id).unwrap();
-        let color = p.color;
-        let name = p.name.clone();
-        let icon = p.icon.clone();
+        let (name, color, icon) = self.appearance(p);
+        let name = name.clone();
+        let icon = icon.clone();
         let emoji = match &icon {
             Some(state::ProjectIcon::Emoji(value)) => value.clone(),
             _ => String::new(),
@@ -114,16 +114,48 @@ impl Diffy {
             let emoji = draft.emoji.read(cx).value().trim().to_owned();
             (!emoji.is_empty()).then_some(state::ProjectIcon::Emoji(emoji))
         };
-        if let Some(p) = self.projects.iter_mut().find(|p| p.id == draft.id) {
-            p.name = name.clone().into();
-            p.custom_name = Some(name);
-            if let Some(color) = draft.color.read(cx).value() {
-                let rgb = color.to_rgb();
-                p.color = ((rgb.r * 255.).round() as u32) << 16
-                    | ((rgb.g * 255.).round() as u32) << 8
-                    | (rgb.b * 255.).round() as u32;
+        let color = draft.color.read(cx).value().map(|color| {
+            let rgb = color.to_rgb();
+            ((rgb.r * 255.).round() as u32) << 16
+                | ((rgb.g * 255.).round() as u32) << 8
+                | (rgb.b * 255.).round() as u32
+        });
+        if let Some(ix) = self.projects.iter().position(|p| p.id == draft.id) {
+            let common = self.projects[ix].repository.clone();
+            if let Some(r) = self
+                .repositories
+                .iter_mut()
+                .find(|r| Some(&r.common_dir) == common.as_ref())
+            {
+                r.name = name.clone().into();
+                r.icon = icon.clone();
+                if let Some(color) = color {
+                    r.color = color;
+                }
+                r.mark_appearance_explicit();
+                // Keep the main checkout's legacy appearance fields readable by
+                // older app versions; sibling names remain independent tab labels.
+                if let Some(p) = self
+                    .projects
+                    .iter_mut()
+                    .find(|p| p.repository == common && p.main_worktree)
+                {
+                    p.name = name.clone().into();
+                    p.custom_name = Some(name);
+                    p.icon = icon;
+                    if let Some(color) = color {
+                        p.color = color;
+                    }
+                }
+            } else {
+                let p = &mut self.projects[ix];
+                p.name = name.clone().into();
+                p.custom_name = Some(name);
+                p.icon = icon;
+                if let Some(color) = color {
+                    p.color = color;
+                }
             }
-            p.icon = icon;
         }
         self.persist(cx);
         self.close_settings(window, cx);
@@ -195,11 +227,14 @@ impl Diffy {
     pub(super) fn render_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let draft = self.settings.as_ref().unwrap();
         let id = draft.id;
-        let remove_disabled = self
-            .projects
-            .iter()
-            .find(|p| p.id == id)
-            .is_none_or(|p| p.mutating);
+        let remove_disabled = self.projects.iter().find(|p| p.id == id).is_none_or(|p| {
+            self.repository_mutating(
+                self.projects
+                    .iter()
+                    .position(|other| other.id == p.id)
+                    .unwrap(),
+            )
+        });
         let image = matches!(draft.icon, Some(state::ProjectIcon::Image(_)));
         let image_path = match &draft.icon {
             Some(state::ProjectIcon::Image(p)) => Some(p.clone()),

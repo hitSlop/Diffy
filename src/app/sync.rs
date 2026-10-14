@@ -109,6 +109,7 @@ impl Diffy {
                     return;
                 }
                 let mut watch_setup = None;
+                let mutated = this.projects[ix].mutating;
                 let p = &mut this.projects[ix];
                 if p.generation != generation {
                     return;
@@ -155,6 +156,7 @@ impl Diffy {
                     this.start_watching(id, root, dirs, cx);
                 }
                 this.ensure_preview(cx);
+                this.discover_worktrees(id, mutated, cx);
                 this.persist(cx);
                 if again {
                     this.projects[ix].metadata_context = None;
@@ -168,6 +170,9 @@ impl Diffy {
         }
     }
     pub(super) fn refresh(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.active_project_id() {
+            self.discover_worktrees(id, true, cx);
+        }
         if let Some(p) = self.projects.get_mut(self.active)
             && (p.loading || p.refreshing)
         {

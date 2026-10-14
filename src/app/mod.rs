@@ -41,8 +41,10 @@ mod reader;
 mod review;
 mod session;
 mod settings;
+mod snake;
 mod sync;
 mod workspace;
+mod worktrees;
 
 gpui_kit::actions!(
     diffy,
@@ -53,6 +55,8 @@ gpui_kit::actions!(
         Refresh,
         NextProject,
         PreviousProject,
+        NextWorktree,
+        PreviousWorktree,
         NextFile,
         PreviousFile,
         NextChange,
@@ -136,6 +140,9 @@ pub fn init(cx: &mut App) {
             gpui_kit::MenuItem::action("Reset Diff Font Size", ResetZoom),
             gpui_kit::MenuItem::Separator,
             gpui_kit::MenuItem::action("Toggle Line Wrapping", ToggleWrap),
+            gpui_kit::MenuItem::Separator,
+            gpui_kit::MenuItem::action("Previous Worktree", PreviousWorktree),
+            gpui_kit::MenuItem::action("Next Worktree", NextWorktree),
         ]),
         gpui_kit::Menu::new("File").items([
             gpui_kit::MenuItem::action("Open Repository…", OpenProject),
@@ -153,6 +160,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-r", Refresh, Some("Diffy")),
         KeyBinding::new("secondary-shift-down", NextProject, Some("Diffy")),
         KeyBinding::new("secondary-shift-up", PreviousProject, Some("Diffy")),
+        KeyBinding::new("secondary-right", NextWorktree, Some("Diffy")),
+        KeyBinding::new("secondary-left", PreviousWorktree, Some("Diffy")),
         KeyBinding::new("secondary-down", NextFile, Some("Diffy")),
         KeyBinding::new("secondary-up", PreviousFile, Some("Diffy")),
         KeyBinding::new("down", NextFile, Some("DiffyFiles")),
@@ -174,8 +183,11 @@ pub fn init(cx: &mut App) {
 }
 
 pub struct Diffy {
+    window_handle: gpui_kit::AnyWindowHandle,
     import: import::Runtime,
     projects: Vec<session::Project>,
+    repositories: Vec<worktrees::RepositoryProject>,
+    topology_sequence: u64,
     active: usize,
     focus: FocusHandle,
     next_id: u64,
@@ -206,11 +218,17 @@ pub struct Diffy {
     preview_requests: u64,
     updates: updates::Controller,
     update_task: Option<Task<()>>,
+    snake: Entity<snake::SnakeGame>,
+    /// Project and Staged/Changes tab the snake was last shown for.
+    snake_tab: Option<(u64, ChangeGroup)>,
+    /// Set once per visit to an empty pane, so focus is offered once.
+    snake_took_focus: bool,
     _keyboard_subscription: Subscription,
 }
 
 impl Render for Diffy {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.prepare_snake(window, cx);
         let p = self.projects.get(self.active);
         let hint = |actions: &[&dyn Action], label: &str| {
             h_flex()
@@ -332,6 +350,8 @@ impl Render for Diffy {
             }))
             .on_action(cx.listener(|this, _: &NextProject, w, cx| this.move_project(1, w, cx)))
             .on_action(cx.listener(|this, _: &PreviousProject, w, cx| this.move_project(-1, w, cx)))
+            .on_action(cx.listener(|this, _: &NextWorktree, w, cx| this.move_worktree(1, w, cx)))
+            .on_action(cx.listener(|this, _: &PreviousWorktree, w, cx| this.move_worktree(-1, w, cx)))
             .on_action(cx.listener(|this, _: &NextFile, _, cx| this.move_file(1, cx)))
             .on_action(cx.listener(|this, _: &PreviousFile, _, cx| this.move_file(-1, cx)))
             .on_action(cx.listener(|this, _: &NextChange, _, cx| this.change(true, cx)))

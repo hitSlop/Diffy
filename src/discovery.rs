@@ -40,17 +40,23 @@ pub struct Preferences {
     pub onboarding_completed: bool,
     pub automatic: [bool; 3],
     pub excluded: BTreeSet<PathBuf>,
+    pub excluded_repositories: BTreeSet<PathBuf>,
 }
 impl Preferences {
     pub fn should_add(&self, candidate: &Candidate) -> bool {
         candidate.error.is_none()
             && !self.excluded.contains(&candidate.path)
+            && !candidate
+                .repository
+                .as_ref()
+                .is_some_and(|r| self.excluded_repositories.contains(r))
             && candidate.sources.iter().any(|s| self.automatic[s.index()])
     }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Candidate {
     pub path: PathBuf,
+    pub repository: Option<PathBuf>,
     pub sources: BTreeSet<Source>,
     pub error: Option<String>,
     pub created_at: Option<SystemTime>,
@@ -261,6 +267,7 @@ impl Scanner {
                     .and_then(|m| m.created().ok().or_else(|| m.modified().ok()))
             });
             let candidate = merged.entry(path.clone()).or_insert_with(|| Candidate {
+                repository: crate::repository::common_directory(&path).ok(),
                 path,
                 sources: BTreeSet::new(),
                 error,
@@ -879,6 +886,13 @@ mod tests {
         assert!(!preferences.should_add(valid));
         preferences.excluded.remove(&root);
         assert!(preferences.should_add(valid));
+        preferences
+            .excluded_repositories
+            .insert(valid.repository.clone().unwrap());
+        assert!(
+            !preferences.should_add(valid),
+            "Repository removal also excludes newly discovered sibling checkouts"
+        );
     }
     #[test]
     fn linked_worktrees_remain_distinct() {

@@ -863,6 +863,9 @@ fn main() {
     icon_fixture.save(&icon_path).unwrap();
     let mut image_saved = saved.clone();
     image_saved.projects[0].icon = Some(diffy::state::ProjectIcon::Image(icon_path));
+    for repository in &mut image_saved.repositories {
+        repository.icon = image_saved.projects[0].icon.clone();
+    }
     diffy::state::save(&prefs, &image_saved).unwrap();
     let (restored_handle, restored_view) = cx
         .update(|cx| {

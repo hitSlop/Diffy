@@ -26,6 +26,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub(super) struct Project {
+    pub(super) repository: Option<PathBuf>,
+    pub(super) topology_task: Option<Task<()>>,
+    pub(super) pending_topology: bool,
+    pub(super) available: bool,
+    pub(super) main_worktree: bool,
+    pub(super) locked_worktree: bool,
+    pub(super) detached_worktree: bool,
     pub(super) metadata_context: Option<crate::repository::MetadataContext>,
     pub(super) id: u64,
     pub(super) watcher: Option<notify::RecommendedWatcher>,
@@ -124,8 +131,11 @@ impl Diffy {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let mut this = Self {
+            window_handle: window.window_handle(),
             import: Default::default(),
             projects: Vec::new(),
+            repositories: Vec::new(),
+            topology_sequence: 0,
             active: 0,
             focus,
             next_id: 1,
@@ -156,6 +166,9 @@ impl Diffy {
             preview_requests: 0,
             updates: updates::Controller::default(),
             update_task: None,
+            snake: cx.new(super::snake::SnakeGame::new),
+            snake_tab: None,
+            snake_took_focus: false,
             _keyboard_subscription: {
                 let owner = cx.entity().downgrade();
                 let window_id = window.window_handle().window_id();
@@ -216,6 +229,11 @@ impl Diffy {
                 .transpose();
             match saved {
                 Ok(Some(saved)) => {
+                    this.repositories = saved
+                        .repositories
+                        .into_iter()
+                        .map(super::worktrees::RepositoryProject::restore)
+                        .collect();
                     this.reader = saved.reader;
                     this.reader.normalize();
                     Theme::update(cx, |theme| theme.mono_font_size = px(this.reader.font_size));
@@ -281,6 +299,7 @@ impl Diffy {
                 Some(cx.observe_window_activation(window, |this, window, cx| {
                     if window.is_window_active() {
                         this.detect_project_apps(cx);
+                        this.refresh_topologies(cx);
                     }
                 }));
         }
@@ -361,6 +380,13 @@ impl Diffy {
         );
         self.push_project(
             Project {
+                repository: None,
+                topology_task: None,
+                pending_topology: false,
+                available: true,
+                main_worktree: true,
+                locked_worktree: false,
+                detached_worktree: false,
                 metadata_context: None,
                 watcher: None,
                 watch_task: None,
@@ -388,6 +414,14 @@ impl Diffy {
     }
     pub(super) fn add_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
+        let repository = self
+            .repositories
+            .iter()
+            .find(|r| r.checkouts.contains(&path))
+            .map(|r| r.common_dir.clone());
+        if let Some(common) = &repository {
+            self.import.preferences.excluded_repositories.remove(common);
+        }
         self.import.preferences.excluded.remove(&path);
         if let Some(ix) = self
             .projects
@@ -395,6 +429,7 @@ impl Diffy {
             .position(|p| p.path.as_ref() == Some(&path))
         {
             self.active = ix;
+            self.remember_worktree();
             self.persist(cx);
             cx.notify();
             return;
@@ -407,6 +442,13 @@ impl Diffy {
         let color = [0x74d9b5, 0xff8175, 0xb9a0e8, 0x82b6e5][self.projects.len() % 4];
         self.push_project(
             Project {
+                repository,
+                topology_task: None,
+                pending_topology: false,
+                available: true,
+                main_worktree: false,
+                locked_worktree: false,
+                detached_worktree: false,
                 metadata_context: None,
                 watcher: None,
                 watch_task: None,
@@ -432,7 +474,7 @@ impl Diffy {
             cx,
         );
         self.active = self.projects.len() - 1;
-        self.refresh(cx);
+        self.load(None, cx);
         self.persist(cx);
     }
     pub fn open_paths(&mut self, paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
@@ -510,7 +552,12 @@ impl Diffy {
         cx: &mut Context<Self>,
     ) {
         if ix < self.projects.len() {
+            if !self.projects[ix].available {
+                return;
+            }
             self.active = ix;
+            self.remember_worktree();
+            self.reveal_worktree();
             self.ensure_preview(cx);
             self.focus.focus(window, cx);
             self.persist(cx);
@@ -521,17 +568,33 @@ impl Diffy {
         let Some(ix) = self.projects.iter().position(|p| p.id == id) else {
             return;
         };
-        if self.projects[ix].mutating {
+        if self.repository_mutating(ix) {
             return;
         }
-        if let Some(path) = self.projects[ix].path.clone() {
-            self.import.preferences.excluded.insert(path);
+        let active_id = self.active_project_id();
+        let ids = self
+            .worktree_indices(ix)
+            .into_iter()
+            .map(|ix| self.projects[ix].id)
+            .collect::<Vec<_>>();
+        if let Some(common) = self.projects[ix].repository.clone() {
+            self.import
+                .preferences
+                .excluded_repositories
+                .insert(common.clone());
+            self.repositories.retain(|r| r.common_dir != common);
         }
-        self.projects.remove(ix);
-        if self.active > ix {
-            self.active -= 1;
+        for p in &self.projects {
+            if ids.contains(&p.id)
+                && let Some(path) = &p.path
+            {
+                self.import.preferences.excluded.insert(path.clone());
+            }
         }
-        self.active = self.active.min(self.projects.len().saturating_sub(1));
+        self.projects.retain(|p| !ids.contains(&p.id));
+        self.active = active_id
+            .and_then(|id| self.projects.iter().position(|p| p.id == id))
+            .unwrap_or_else(|| ix.min(self.projects.len().saturating_sub(1)));
         self.hovered_project = None;
         self.focus.focus(window, cx);
         self.persist(cx);
@@ -546,9 +609,13 @@ impl Diffy {
         if self.projects.is_empty() {
             return;
         }
-        let ix =
-            (self.active as isize + direction).rem_euclid(self.projects.len() as isize) as usize;
-        self.switch_project(ix, window, cx);
+        let rows = self.project_rows();
+        let current = rows
+            .iter()
+            .position(|&ix| self.same_repository(ix, self.active))
+            .unwrap_or(0);
+        let next = (current as isize + direction).rem_euclid(rows.len() as isize) as usize;
+        self.switch_project(rows[next], window, cx);
     }
     pub(super) fn set_group(
         &mut self,
@@ -567,6 +634,11 @@ impl Diffy {
     }
     fn saved_state(&self, cx: &App) -> state::SavedState {
         state::SavedState {
+            repositories: self
+                .repositories
+                .iter()
+                .map(super::worktrees::RepositoryProject::saved)
+                .collect(),
             projects: self
                 .projects
                 .iter()
@@ -688,15 +760,15 @@ impl Diffy {
     pub fn project_changed_count(&self, id: u64) -> Option<usize> {
         self.projects
             .iter()
-            .find(|p| p.id == id)
-            .map(|p| p.changed_count)
+            .position(|p| p.id == id)
+            .map(|ix| self.repository_changed_count(ix))
     }
     #[cfg(feature = "ui-tests")]
     pub fn sidebar_width(&self) -> f32 {
         self.sidebar_width
     }
     pub fn project_count(&self) -> usize {
-        self.projects.len()
+        self.project_rows().len()
     }
     pub fn active_project_id(&self) -> Option<u64> {
         self.projects.get(self.active).map(|p| p.id)
