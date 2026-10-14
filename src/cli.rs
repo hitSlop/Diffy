@@ -214,10 +214,9 @@ fn install_at(destination: &Path, executable: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    #[cfg(unix)]
     #[test]
     fn open_requests_round_trip_without_shell_interpolation() {
         let paths = vec![
@@ -235,7 +234,6 @@ mod tests {
             assert!(paths_from_url(bad).is_err(), "{bad}");
         }
     }
-    #[cfg(unix)]
     #[test]
     fn installer_preserves_conflicts_and_quotes_arguments() {
         use std::fs;

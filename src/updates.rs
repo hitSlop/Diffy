@@ -58,7 +58,7 @@ fn installation_path() -> Result<PathBuf, String> {
         .ok_or("Install Diffy.app in Applications to use automatic updates.".into());
     #[cfg(target_os = "windows")]
     {
-        if env!("DIFFY_PACKAGE_KIND") != "nsis"
+        if !matches!(env!("DIFFY_PACKAGE_KIND"), "nsis")
             || !executable
                 .parent()
                 .is_some_and(|parent| parent.join("diffy-cli.exe").is_file())
