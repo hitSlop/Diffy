@@ -1,5 +1,7 @@
 pub mod app;
+pub mod cli;
 pub mod demo;
+pub mod discovery;
 pub mod fonts;
 mod keyboard;
 pub mod repository;

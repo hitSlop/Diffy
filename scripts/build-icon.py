@@ -4,6 +4,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
@@ -22,4 +23,12 @@ for size in (16, 32, 128, 256, 512):
         shutil.copyfile(png, clean / name)
 output = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "target/packaging/Diffy.icns"
 output.parent.mkdir(parents=True, exist_ok=True)
-subprocess.run(["/usr/bin/iconutil", "-c", "icns", str(clean), "-o", str(output)], check=True)
+# iconutil can reject workspace paths under filesystem restrictions. Compile
+# in a temporary directory, then copy the validated result to the build output.
+with tempfile.TemporaryDirectory(prefix="diffy-icon-") as temporary:
+    temporary = Path(temporary)
+    temporary_source = temporary / "Diffy.iconset"
+    temporary_output = temporary / "Diffy.icns"
+    shutil.copytree(clean, temporary_source)
+    subprocess.run(["/usr/bin/iconutil", "-c", "icns", str(temporary_source), "-o", str(temporary_output)], check=True)
+    shutil.copyfile(temporary_output, output)

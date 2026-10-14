@@ -6,16 +6,16 @@
 
 A small native Rust/GPUI Kit diff viewer for macOS.
 
-- Pure-black surfaces and colored squircle project icons that grow gently on hover.
+- Pure-black surfaces and colored squircle project icons that grow gently on hover. Badges count unique changed files across Staged and Changes (partially staged files count once).
 - Bundled Commit Mono Regular and Medium throughout the app, with programming ligatures disabled.
-- A compact alphabetical file list on the right and one selected diff in the center. Filenames stay prominent; directory prefixes are dimmed and shortened in the middle when needed. Hover shows the complete path.
+- A compact alphabetical file list with aligned paths and subtle spacing between directories on the right and one selected diff in the center. Filenames stay prominent; directory prefixes are dimmed and shortened in the middle when needed. Hover shows the complete path.
 - **Staged** first, then **Changes**, with separate counts. Changes is selected initially.
 - Staged compares HEAD with the index; Changes compares the index with disk and includes untracked files. A file can appear in both views.
 - Unified or split diffs with highlighting, inline changes, expandable context, source selection, and copying. Long lines wrap; split mode gives 40% to the original and 60% to the modified source. Added files fill one pane.
 - Hover **+ / −** actions in file rows and the preview header for whole-file staging/unstaging. Row actions affect that row without selecting it.
 - Sticky **Stage all / Unstage all** below the file list runs one Git operation for the current scope; it is also available in the command palette.
 - A searchable **⌘P** palette for switching projects and executing commands.
-- Opened repositories, their order, active project, scopes, diff modes, selected files, custom names, and icons are remembered across launches.
+- Opened repositories, their order, active project, scopes, diff modes, selected files, custom names, icons, and sidebar width are remembered across launches. Drag the sidebar divider to resize it; the handle appears on hover.
 - Right-click a project for settings: rename it, change its color with GPUI Kit's color picker, enter an emoji (⌃⌘Space opens the macOS picker), choose an image, or remove it from Diffy. Image icons reference the chosen local file; unavailable images fall back to the project initial. Images use rounded square crops and stay fixed in size during hover.
 - Removing from Diffy only removes the saved entry. It never deletes a project or changes its Git state.
 - Holding ⌘↑/↓ advances through files at approximately five per second after a brief initial delay; individual taps stay immediate. macOS holds use a timer and physical key-state checks, independent of OS shortcut autorepeat. Navigation preferences save after a short idle debounce.
@@ -31,9 +31,38 @@ cargo run --locked -- /path/to/repository /path/to/another/repository
 cargo run --locked -- --demo
 ```
 
-Normal launch restores repositories; first launch shows an Open repository prompt. Use **+**, **⌘O**, or the command palette to open repositories. Nested folders resolve to their Git root and duplicate roots are merged. Missing repositories remain removable and show a recoverable error.
+Normal launch restores repositories. The project import picker appears once, including for existing users. Use **+**, **⌘O**, or the command palette to open repositories. Nested folders resolve to their Git root and duplicate roots are merged. Missing repositories remain removable and show a recoverable error.
+
+## Import projects
+
+Use **Import** at the bottom of the project rail, **File → Import Projects…**, or the command palette to find local Git projects from Herdr, Codex, and Claude Code. Select the projects to add; repositories already in Diffy are marked **Already added**. Unavailable directories are hidden. Results are newest-first within each source; non-Git folders are hidden too. Older sessions without a stored working directory are skipped.
+
+**Automatically add new projects** is opt in separately for each source. Removed and unselected projects stay excluded until you explicitly import or open them again. Imported repositories remain in Diffy when their Herdr workspace closes or agent history disappears. Importing preserves the project you are viewing.
+
+Discovery reads directory metadata only. It does not run agents, resume sessions, read terminal output, or access credentials. It honors `HERDR_SOCKET_PATH`, `XDG_CONFIG_HOME`, `CODEX_HOME`, and `CLAUDE_CONFIG_DIR`; otherwise it uses each tool's standard local directories. Herdr's saved sessions provide an offline fallback. Remote repositories need a local checkout in this release.
 
 `--demo` opens sample projects without reading or writing saved preferences. Demo staging is disabled.
+
+## Terminal command
+
+In the installed macOS app, choose **File → Install terminal command…**, or search for **Install terminal command** in the command palette. This installs `~/.local/bin/diffy` for your user. Existing commands from other tools are preserved.
+
+If your terminal cannot find it, add this line to your shell configuration (usually `~/.zshrc`) and open a new terminal:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+```sh
+diffy .
+diffy /path/to/repository /path/to/another/repository
+diffy --check .
+diffy --version
+```
+
+`diffy .` adds or selects the repository in the existing Diffy window and brings it forward. A closed window is recreated; a stopped app is launched. Relative paths are resolved in your terminal, and nested folders resolve to the repository root. `diffy` without paths opens your saved projects. Reinstall the command if you move `Diffy.app`; normal updates at the same location keep it working.
+
+CLI installation is currently macOS-only. Development binaries still accept repository paths directly through `cargo run`.
 
 ## Keyboard shortcuts
 
