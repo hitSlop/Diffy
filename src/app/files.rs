@@ -38,6 +38,7 @@ use gpui_kit::component::input::Input;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::v_flex;
@@ -106,6 +107,7 @@ impl Diffy {
         let owner = cx.entity().downgrade();
         let project_id = p.id;
         let group = p.group;
+        let local = p.path.is_some();
         let disabled = p.path.is_none() || p.loading;
         let files_focused = view.focus.contains_focused(window, cx);
         v_flex()
@@ -235,6 +237,7 @@ impl Diffy {
                                     let action_owner = owner.clone();
                                     let action_path = path.clone();
                                     let tooltip_path = path.clone();
+                                    let menu_path = path.clone();
                                     let filename = row.filename.clone();
                                     let row_group = row.group.clone();
                                     let action_label = if group == ChangeGroup::Changes {
@@ -248,6 +251,7 @@ impl Diffy {
                                         DiffFileStatus::Deleted => ("D", cx.theme().danger),
                                         DiffFileStatus::Renamed => ("R", cx.theme().primary),
                                         DiffFileStatus::Copied => ("C", cx.theme().primary),
+                                        DiffFileStatus::Conflicted => ("U", cx.theme().danger),
                                         _ => ("M", cx.theme().muted_foreground),
                                     };
                                     div()
@@ -305,7 +309,7 @@ impl Diffy {
                                                         } else {
                                                             IconName::Minus
                                                         })
-                                                        .disabled(disabled)
+                                                        .disabled(disabled || !f.stageable())
                                                         .accessibility_label(action_label)
                                                         .tooltip(if group == ChangeGroup::Changes {
                                                             "Stage file"
@@ -342,6 +346,7 @@ impl Diffy {
                                                 this.select_file(path.clone(), window, cx)
                                             });
                                         }))
+                                        .context_menu(move |menu, _, _| super::reader::file_menu(menu, project_id, menu_path.as_str(), local))
                                         .into_any_element()
                                     }
                                 })
@@ -376,7 +381,7 @@ impl Diffy {
                             IconName::Minus
                         })
                         .label(if group == ChangeGroup::Changes {
-                            "Stage all"
+                            if view.files.iter().any(|f| !f.stageable()) { "Stage all except conflicts" } else { "Stage all" }
                         } else {
                             "Unstage all"
                         })
@@ -415,6 +420,7 @@ impl Diffy {
         let view = p.view_mut();
         view.select(path, cx);
         view.focus.focus(window, cx);
+        self.ensure_preview(cx);
         self.persist(cx);
         cx.notify();
     }
@@ -428,6 +434,7 @@ impl Diffy {
         };
         let path = self.projects[self.active].view().files[ix].path().clone();
         self.projects[self.active].view_mut().select(path, cx);
+        self.ensure_preview(cx);
         self.persist_navigation(cx);
         cx.notify();
     }

@@ -26,7 +26,7 @@ pub enum DiffInlineUnit {
 const MIN_INLINE_SIMILARITY: f32 = 0.25;
 
 /// Settings that determine prepared presentation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PresentationOptions {
     pub inline_unit: Option<DiffInlineUnit>,
     pub inline_max_line_length: usize,
@@ -82,6 +82,71 @@ impl<T> LineSpans<T> {
 }
 
 impl FilePresentation {
+    /// Retain the source document with its cache entry so pointer identities cannot be reused.
+    pub(crate) fn prepare_cached(
+        file: &DiffFile,
+        options: PresentationOptions,
+        highlighters: &mut SyntaxHighlighters,
+    ) -> std::sync::Arc<Self> {
+        type Key = (usize, SharedString, PresentationOptions);
+        type Entry = (DiffFile, std::sync::Arc<FilePresentation>, usize);
+        type Cache = (lru::LruCache<Key, Entry>, usize);
+        static CACHE: std::sync::OnceLock<std::sync::Mutex<Cache>> = std::sync::OnceLock::new();
+        let cache = CACHE.get_or_init(|| {
+            std::sync::Mutex::new((
+                lru::LruCache::new(std::num::NonZeroUsize::new(32).unwrap()),
+                0,
+            ))
+        });
+        let key = (file.cache_identity(), file.language(), options);
+        if let Some((_, presentation, _)) =
+            cache.lock().unwrap_or_else(|e| e.into_inner()).0.get(&key)
+        {
+            return presentation.clone();
+        }
+        let _span = tracing::info_span!("prepare_diff_presentation").entered();
+        let presentation = std::sync::Arc::new(Self::prepare(file, options, highlighters));
+        let bytes = file.estimated_size_bytes() + presentation.estimated_size_bytes();
+        let budget = 32 * 1024 * 1024;
+        if bytes <= budget {
+            let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((_, existing, _)) = cache.0.get(&key) {
+                return existing.clone();
+            }
+            while cache.1 + bytes > budget || cache.0.len() == cache.0.cap().get() {
+                if let Some((_, (_, _, weight))) = cache.0.pop_lru() {
+                    cache.1 -= weight;
+                } else {
+                    break;
+                }
+            }
+            cache.1 += bytes;
+            cache
+                .0
+                .put(key, (file.clone(), presentation.clone(), bytes));
+        }
+        presentation
+    }
+    fn estimated_size_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.names.iter().map(|n| n.len()).sum::<usize>()
+            + self
+                .syntax
+                .iter()
+                .map(|s| {
+                    s.starts.capacity() * 4
+                        + s.spans.capacity() * std::mem::size_of::<(Range<u32>, u16)>()
+                })
+                .sum::<usize>()
+            + self
+                .inline
+                .iter()
+                .map(|s| {
+                    s.starts.capacity() * 4
+                        + s.spans.capacity() * std::mem::size_of::<(Range<u32>, ())>()
+                })
+                .sum::<usize>()
+    }
     /// Blocking; run it on a background thread.
     pub(crate) fn prepare(
         file: &DiffFile,

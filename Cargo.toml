@@ -1,6 +1,6 @@
 [package]
 name = "diffy"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "A small desktop Git diff viewer"
 publish = false
@@ -21,13 +21,31 @@ ignore = "=0.4.33"
 notify = "=8.2.0"
 nucleo-matcher = "=0.3.1"
 async-channel = "=2.5.0"
+lru = "=0.18.5"
+gix = { version = "=0.89.0", default-features = false, features = ["basic", "status", "sha1"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-chrome = "=0.7.2"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
+sha2 = "=0.10.9"
 url = "=2.5.8"
 gpui-kit = { version = "=0.7.3", features = ["tree-sitter-rust", "tree-sitter-typescript", "tree-sitter-javascript", "tree-sitter-toml", "tree-sitter-markdown"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSURL"] }
+
 [target.'cfg(windows)'.dependencies]
 interprocess = "=2.4.4"
+
+[dev-dependencies]
+criterion = { version = "0.8", default-features = false }
+
+[[bench]]
+name = "performance"
+harness = false
 
 [profile.dev]
 debug = 0
@@ -68,5 +86,15 @@ info-plist-path = "packaging/Info.plist"
 
 [[test]]
 name = "import_ui"
+harness = false
+required-features = ["ui-tests"]
+
+[[test]]
+name = "performance_ui"
+harness = false
+required-features = ["ui-tests"]
+
+[[test]]
+name = "project_menu_ui"
 harness = false
 required-features = ["ui-tests"]

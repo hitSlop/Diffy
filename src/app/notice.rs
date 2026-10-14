@@ -116,14 +116,25 @@ impl Diffy {
                     Err(_) => return,
                 }
             }
-            let can_install = owner.update(cx, |this, cx| {
-                if this.state_error.is_some() {
-                    this.updates.phase = updates::Phase::Error("Couldn't save projects before restarting. Resolve the preference error and retry.".into());
+            let flush = owner
+                .read_with(cx, |this, _| {
+                    this.state_writer
+                        .as_ref()
+                        .map(crate::state::Writer::flush_handle)
+                })
+                .ok()
+                .flatten();
+            let saved = cx
+                .background_spawn(async move { flush.map_or(Ok(()), crate::state::Flush::wait) })
+                .await;
+            if let Err(error) = saved {
+                let _ = owner.update(cx, |this, cx| {
+                    this.state_error = Some(error.clone());
+                    this.updates.phase = updates::Phase::Error(error);
                     cx.notify();
-                    false
-                } else { true }
-            }).unwrap_or(false);
-            if !can_install { return; }
+                });
+                return;
+            }
             let result = cx
                 .background_spawn(async move { release.package.install(bytes) })
                 .await;

@@ -25,6 +25,10 @@ Diffy uses nucleo-matcher 0.3.1 (MPL-2.0) to filter the changed-file list. The l
 - nucleo-matcher: https://github.com/helix-editor/nucleo
 - Mozilla Public License 2.0: https://www.mozilla.org/en-US/MPL/2.0/
 
+Diffy uses gix 0.89.0 (MIT/Apache-2.0) for the opt-in read-only repository metadata backend. Its dependency inventory and available upstream license texts ship with the packaged app.
+
+- gix: https://github.com/GitoxideLabs/gitoxide
+
 Diffy uses cargo-packager (MIT/Apache-2.0) for packaging and cargo-packager-updater (MIT/Apache-2.0) for signed updates. The updater is pinned to revision `0a3ea3a089363b7e77dfca238be5bbcf3f4d75f6` for HTTPS enforcement.
 
 - Source: https://github.com/crabnebula-dev/cargo-packager

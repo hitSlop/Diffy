@@ -14,7 +14,18 @@ if output.exists():
     shutil.rmtree(output)
 output.mkdir(parents=True)
 inventory = []
-for package in sorted(metadata["packages"], key=lambda p: (p["name"], p["version"])):
+# Benchmark-only dependencies are not part of the packaged application.
+nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
+included = set()
+pending = [metadata["resolve"]["root"]]
+while pending:
+    package_id = pending.pop()
+    if package_id in included:
+        continue
+    included.add(package_id)
+    pending.extend(dep["pkg"] for dep in nodes[package_id]["deps"]
+                   if any(kind["kind"] != "dev" for kind in dep["dep_kinds"]))
+for package in sorted((p for p in metadata["packages"] if p["id"] in included), key=lambda p: (p["name"], p["version"])):
     directory = Path(package["manifest_path"]).parent
     destination = output / (package["name"] + "-" + package["version"])
     candidates = [p for p in directory.iterdir()

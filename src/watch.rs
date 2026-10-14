@@ -7,11 +7,31 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[derive(Clone, Default)]
+pub struct RefreshHint {
+    pub full: bool,
+    pub paths: BTreeSet<PathBuf>,
+}
+impl RefreshHint {
+    pub fn merge(&mut self, other: Self) {
+        self.full |= other.full;
+        if self.full {
+            self.paths.clear();
+        } else {
+            self.paths.extend(other.paths);
+            if self.paths.len() > 4096 {
+                self.full = true;
+                self.paths.clear();
+            }
+        }
+    }
+}
+
 pub fn start(
     root: &Path,
     git_dirs: &[PathBuf],
     state_path: Option<PathBuf>,
-) -> Result<(RecommendedWatcher, async_channel::Receiver<()>), String> {
+) -> Result<(RecommendedWatcher, async_channel::Receiver<RefreshHint>), String> {
     let (tx, rx) = async_channel::bounded(1);
     let (wake, receive) = std::sync::mpsc::sync_channel(1);
     let pending = Arc::new(Mutex::new(PendingEvents::default()));
@@ -38,6 +58,7 @@ pub fn start(
         }
     }
     let mut filter = WatchFilter::open(root, git_dirs, state_path.as_deref());
+    let queued = rx.clone();
     std::thread::Builder::new()
         .name("diffy-watch".into())
         .spawn(move || {
@@ -48,12 +69,37 @@ pub fn start(
                 if batch.rescan {
                     filter.reload();
                 }
-                if (batch.rescan
-                    || filter.wants_refresh(&batch.paths.into_iter().collect::<Vec<_>>()))
-                    && tx.try_send(()).is_err()
-                    && tx.is_closed()
-                {
-                    break;
+                let paths = batch.paths.into_iter().collect::<Vec<_>>();
+                if batch.rescan || filter.wants_refresh(&paths) {
+                    let mut hint = RefreshHint {
+                        full: batch.rescan,
+                        ..Default::default()
+                    };
+                    for path in &paths {
+                        let path = filter.align(path);
+                        if filter.git_rel(&path).is_some()
+                            || path.file_name().is_some_and(|n| n == ".gitignore")
+                        {
+                            hint.full = true;
+                        } else if let Some(rel) = filter.worktree_rel(&path) {
+                            hint.paths.insert(rel.to_owned());
+                        } else {
+                            hint.full = true;
+                        }
+                    }
+                    if hint.full {
+                        hint.paths.clear();
+                    }
+                    if let Err(error) = tx.try_send(hint) {
+                        if tx.is_closed() {
+                            break;
+                        }
+                        let mut hint = error.into_inner();
+                        if let Ok(old) = queued.try_recv() {
+                            hint.merge(old);
+                        }
+                        let _ = tx.try_send(hint);
+                    }
                 }
             }
         })

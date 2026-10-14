@@ -23,6 +23,7 @@ use gpui_kit::component::badge::Badge;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::h_flex;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::v_flex;
 use gpui_kit::div;
@@ -191,13 +192,26 @@ impl Diffy {
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.switch_project(ix, window, cx)),
                     )
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, _, w, cx| {
-                            cx.stop_propagation();
-                            this.open_settings(project_id, w, cx);
-                        }),
-                    )
+                    .context_menu({
+                        let owner = cx.entity().downgrade();
+                        move |menu, _, cx| {
+                            let Some(owner) = owner.upgrade() else {
+                                return menu;
+                            };
+                            let this = owner.read(cx);
+                            let Some(project) = this.projects.iter().find(|p| p.id == project_id)
+                            else {
+                                return menu;
+                            };
+                            super::project_menu::project_menu(
+                                menu.action_context(this.focus.clone()),
+                                project_id,
+                                &this.project_apps.installed,
+                                project.path.is_some(),
+                                project.mutating,
+                            )
+                        }
+                    })
                     .into_any_element()
             })
             .collect::<Vec<_>>();

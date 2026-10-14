@@ -391,6 +391,50 @@ pub struct DiffFile {
 }
 
 impl DiffFile {
+    pub(crate) fn cache_identity(&self) -> usize {
+        Arc::as_ptr(&self.inner) as usize
+    }
+    /// Approximate retained document memory, used to bound application preview caches.
+    pub fn estimated_size_bytes(&self) -> usize {
+        let inner = &self.inner;
+        std::mem::size_of_val(inner.as_ref())
+            + [&inner.original, &inner.modified]
+                .iter()
+                .map(|side| {
+                    side.source.len()
+                        + side.lines.capacity() * std::mem::size_of::<SourceLine>()
+                        + side
+                            .lines
+                            .iter()
+                            .map(|line| {
+                                line.text.len()
+                                    + line.display.len()
+                                    + line
+                                        .chunks
+                                        .iter()
+                                        .map(|chunk| chunk.text.len())
+                                        .sum::<usize>()
+                                    + line.display_tabs.capacity()
+                                        * std::mem::size_of::<DisplayTab>()
+                            })
+                            .sum::<usize>()
+                })
+                .sum::<usize>()
+            + inner.pairs.capacity() * std::mem::size_of::<LinePair>()
+            + inner.hunks.capacity() * std::mem::size_of::<Hunk>()
+            + inner.patch_lines.capacity() * std::mem::size_of::<PatchLine>()
+            + inner
+                .patch_ixs
+                .iter()
+                .map(|ixs| ixs.capacity() * std::mem::size_of::<usize>())
+                .sum::<usize>()
+            + inner
+                .extended_headers
+                .iter()
+                .map(|header| std::mem::size_of::<SharedString>() + header.len())
+                .sum::<usize>()
+            + inner.conflicts.capacity() * std::mem::size_of::<DiffConflict>()
+    }
     /// Parses every file in a unified or Git diff, in patch order, without
     /// computing differences. Syntax emphasis is prepared later by
     /// [`super::DiffState`] on a background thread.

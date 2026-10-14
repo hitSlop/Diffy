@@ -26,6 +26,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub(super) struct Project {
+    pub(super) metadata_context: Option<crate::repository::MetadataContext>,
     pub(super) id: u64,
     pub(super) watcher: Option<notify::RecommendedWatcher>,
     pub(super) watch_task: Option<Task<()>>,
@@ -130,6 +131,7 @@ impl Diffy {
             next_id: 1,
             state_path: if demo { None } else { state_path },
             state_error: None,
+            state_restore_failed: false,
             restoring: true,
             sidebar_width: 300.,
             command: cx.new(|cx| CommandState::new(window, cx)),
@@ -137,6 +139,7 @@ impl Diffy {
             previous_focus: None,
             hovered_project: None,
             settings: None,
+            project_apps: Default::default(),
             repeat_direction: None,
             file_repeat: None,
             file_key_probe: keyboard::file_shortcut_pressed,
@@ -144,6 +147,13 @@ impl Diffy {
             file_scroll_axis: None,
             navigation_save: None,
             persisted_state: None,
+            preview_cache: Default::default(),
+            state_writer: None,
+            state_save_task: None,
+            closing: false,
+            quit_subscription: None,
+            reader: Default::default(),
+            preview_requests: 0,
             updates: updates::Controller::default(),
             update_task: None,
             _keyboard_subscription: {
@@ -199,9 +209,16 @@ impl Diffy {
                 this.add_demo(sample, cx);
             }
         } else {
-            let saved = this.state_path.as_ref().map(|p| state::load(p)).transpose();
+            let saved = this
+                .state_path
+                .as_ref()
+                .map(|p| state::load_for_restore(p))
+                .transpose();
             match saved {
                 Ok(Some(saved)) => {
+                    this.reader = saved.reader;
+                    this.reader.normalize();
+                    Theme::update(cx, |theme| theme.mono_font_size = px(this.reader.font_size));
                     this.import.preferences = saved.discovery;
                     this.sidebar_width = saved
                         .sidebar_width
@@ -245,7 +262,12 @@ impl Diffy {
                         })
                         .unwrap_or(0);
                 }
-                Err(e) => this.state_error = Some(e),
+                Err(e) => {
+                    this.state_restore_failed = true;
+                    this.state_error = Some(format!(
+                        "{e}. Preferences were preserved; settings will not be saved in this session."
+                    ));
+                }
                 _ => {}
             }
             for path in paths {
@@ -253,7 +275,29 @@ impl Diffy {
             }
         }
         this.restoring = false;
-        if !demo && this.state_path.is_some() {
+        if !demo {
+            this.detect_project_apps(cx);
+            this.project_apps.activation =
+                Some(cx.observe_window_activation(window, |this, window, cx| {
+                    if window.is_window_active() {
+                        this.detect_project_apps(cx);
+                    }
+                }));
+        }
+        this.persist(cx);
+        this.quit_subscription = Some(cx.on_app_quit(|this, cx| {
+            let state = this.saved_state(cx);
+            if let Some(writer) = &this.state_writer {
+                writer.enqueue(state);
+            }
+            let flush = this.state_writer.as_ref().map(state::Writer::flush_handle);
+            cx.background_executor().spawn(async move {
+                if let Err(error) = flush.map_or(Ok(()), state::Flush::wait) {
+                    eprintln!("{error}");
+                }
+            })
+        }));
+        if !demo && this.state_path.is_some() && !this.state_restore_failed {
             cx.defer_in(window, |this, window, cx| {
                 this.start_discovery(window, cx);
                 if !this.import.preferences.onboarding_completed {
@@ -262,14 +306,15 @@ impl Diffy {
             });
         }
         let owner = cx.entity().downgrade();
+        let closing_window = window.window_handle();
         window.on_window_should_close(cx, move |_, cx| {
             owner
                 .update(cx, |this, cx| {
                     if this.updates.blocks_mutations() {
                         return false;
                     }
-                    this.persist(cx);
-                    true
+                    this.exit(Some(closing_window), cx);
+                    false
                 })
                 .unwrap_or(true)
         });
@@ -316,6 +361,7 @@ impl Diffy {
         );
         self.push_project(
             Project {
+                metadata_context: None,
                 watcher: None,
                 watch_task: None,
                 pending_refresh: false,
@@ -361,6 +407,7 @@ impl Diffy {
         let color = [0x74d9b5, 0xff8175, 0xb9a0e8, 0x82b6e5][self.projects.len() % 4];
         self.push_project(
             Project {
+                metadata_context: None,
                 watcher: None,
                 watch_task: None,
                 pending_refresh: false,
@@ -464,6 +511,7 @@ impl Diffy {
     ) {
         if ix < self.projects.len() {
             self.active = ix;
+            self.ensure_preview(cx);
             self.focus.focus(window, cx);
             self.persist(cx);
             cx.notify();
@@ -512,18 +560,13 @@ impl Diffy {
             return;
         };
         p.group = group;
+        self.ensure_preview(cx);
         self.focus.focus(window, cx);
         self.persist(cx);
         cx.notify();
     }
-    pub(super) fn persist(&mut self, cx: &App) {
-        if self.restoring {
-            return;
-        }
-        let Some(path) = &self.state_path else {
-            return;
-        };
-        let state = state::SavedState {
+    fn saved_state(&self, cx: &App) -> state::SavedState {
+        state::SavedState {
             projects: self
                 .projects
                 .iter()
@@ -544,15 +587,94 @@ impl Diffy {
             active: self.projects.get(self.active).and_then(|p| p.path.clone()),
             sidebar_width: Some(self.sidebar_width),
             discovery: self.import.preferences.clone(),
+            reader: self.reader.clone(),
             ..Default::default()
+        }
+    }
+    pub(super) fn persist(&mut self, cx: &mut Context<Self>) {
+        if self.restoring || self.state_restore_failed {
+            return;
+        }
+        let Some(path) = &self.state_path else {
+            return;
         };
+        let state = self.saved_state(cx);
         if self.persisted_state.as_ref() == Some(&state) && self.state_error.is_none() {
             return;
         }
-        self.state_error = state::save(path, &state).err();
-        if self.state_error.is_none() {
-            self.persisted_state = Some(state);
+        if self.state_writer.is_none() {
+            match state::Writer::new(path.clone()) {
+                Ok(writer) => {
+                    let events = writer.events();
+                    self.state_writer = Some(writer);
+                    self.state_save_task = Some(cx.spawn(async move |owner, cx| {
+                        while events.recv().await.is_ok() {
+                            if owner
+                                .update(cx, |this, cx| {
+                                    this.state_error =
+                                        this.state_writer.as_ref().and_then(|w| w.result().err());
+                                    if this.state_error.is_some() {
+                                        this.persisted_state = None;
+                                    }
+                                    cx.notify();
+                                })
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }));
+                }
+                Err(error) => {
+                    self.state_error = Some(error);
+                    return;
+                }
+            }
         }
+        self.state_writer.as_ref().unwrap().enqueue(state.clone());
+        self.persisted_state = Some(state);
+    }
+    pub(super) fn exit(
+        &mut self,
+        window: Option<gpui_kit::AnyWindowHandle>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.closing {
+            return;
+        }
+        self.closing = true;
+        self.navigation_save = None;
+        self.persist(cx);
+        let flush = self.state_writer.as_ref().map(state::Writer::flush_handle);
+        let error = self
+            .state_error
+            .clone()
+            .filter(|_| self.state_writer.is_none() && !self.state_restore_failed);
+        cx.spawn(async move |owner, cx| {
+            let result = cx
+                .background_spawn(async move {
+                    if let Some(error) = error {
+                        Err(error)
+                    } else {
+                        flush.map_or(Ok(()), state::Flush::wait)
+                    }
+                })
+                .await;
+            let _ = owner.update(cx, |this, cx| {
+                this.closing = false;
+                if let Err(error) = result {
+                    this.state_error = Some(error);
+                    cx.notify();
+                    return;
+                }
+                if let Some(window) = window {
+                    let _ = window.update(cx, |_, window, _| window.remove_window());
+                } else {
+                    cx.quit();
+                }
+            });
+        })
+        .detach();
     }
     pub(super) fn persist_navigation(&mut self, cx: &mut Context<Self>) {
         self.navigation_save = Some(cx.spawn(async move |this, cx| {
@@ -587,6 +709,6 @@ impl Diffy {
     pub fn is_busy(&self) -> bool {
         self.projects
             .get(self.active)
-            .is_some_and(|p| p.loading || p.refreshing)
+            .is_some_and(|p| p.loading || p.refreshing || p.view().preview_loading)
     }
 }

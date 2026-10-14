@@ -1,7 +1,7 @@
 # GPUI Component patch
 
 `gpui-component` is the crates.io 0.7.3 package with small changes in the diff
-state, renderer, and document modules:
+state, renderer, document, and menu modules:
 
 1. Reapply diff row-height estimates after a list width change has invalidated
    them in GPUI's prepaint. This preserves the complete scroll range for large
@@ -15,6 +15,9 @@ state, renderer, and document modules:
    overflowing diff. Read geometry during paint and cache changed ranges when
    rows rebuild. The strip leaves the scrollbar thumb and pointer events clear;
    its row-based positions are approximate when lines wrap.
+6. Add opt-in `PopupMenuItem::danger()` styling. Destructive labels retain the
+   theme's danger color on hover and keyboard selection; disabled items remain
+   muted. Diffy's project menu uses it for Remove Project.
 
 Differ selects this package with a Cargo patch. The native integration test in
 `tests/ui.rs` verifies wheel/keyboard scrolling to the last line of a 3,000-line
@@ -23,3 +26,5 @@ while live edits arrive. Keep these tests when removing the patch after an
 upstream fix. `tests/ui/scrollbar.rs` also checks marker pixels on the first
 frame, both diff modes, resizing, folding, file changes, and pointer interactions.
 Upstream licensing is in `gpui-component/LICENSE-APACHE`.
+
+The performance pass also adds estimated document memory accounting, a bounded shared presentation cache keyed by retained document identity/language/options, and a lightweight reading-position handle for unloading inactive previews. Cache entries retain their document so pointer identities cannot be reused while an entry is cached. Source copying and selection semantics remain unchanged.

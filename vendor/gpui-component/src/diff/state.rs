@@ -323,6 +323,19 @@ pub struct DiffState {
     _selection_subscription: Subscription,
 }
 
+/// A source anchor that can survive unloading an inactive preview.
+#[derive(Clone)]
+pub struct DiffReadingPosition {
+    line: Option<DiffLinePosition>,
+    offset: Pixels,
+    horizontal: Pixels,
+}
+impl DiffReadingPosition {
+    pub fn source_line(&self) -> Option<&DiffLinePosition> {
+        self.line.as_ref()
+    }
+}
+
 impl EventEmitter<DiffEvent> for DiffState {}
 impl Focusable for DiffState {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -331,6 +344,31 @@ impl Focusable for DiffState {
 }
 
 impl DiffState {
+    pub fn reading_position(&self) -> DiffReadingPosition {
+        let top = self.list.logical_scroll_top();
+        DiffReadingPosition {
+            line: self.row_position(top.item_ix),
+            offset: top.offset_in_item,
+            horizontal: self.horizontal_scroll.offset().x,
+        }
+    }
+    pub fn restore_reading_position(
+        &mut self,
+        position: DiffReadingPosition,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(line) = position.line {
+            self.scroll_to_line(line.clone(), cx);
+            if let Some(row) = self.expand_line(&line) {
+                self.list.scroll_to(ListOffset {
+                    item_ix: row,
+                    offset_in_item: position.offset,
+                });
+            }
+        }
+        self.horizontal_scroll
+            .set_offset(point(position.horizontal, px(0.)));
+    }
     /// Creates a unified viewer with three unchanged lines around each change.
     pub fn new(files: impl IntoIterator<Item = DiffFile>, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle().tab_stop(true);
@@ -1491,7 +1529,7 @@ impl DiffState {
                 let mut moved = highlighters.take();
                 let (presentation, returned) = cx
                     .background_spawn(async move {
-                        let presentation = FilePresentation::prepare(
+                        let presentation = FilePresentation::prepare_cached(
                             &file,
                             options,
                             moved.get_or_insert_default(),
@@ -1505,7 +1543,7 @@ impl DiffState {
                         return false;
                     }
                     if let Some(slot) = state.presentations.get_mut(ix) {
-                        *slot = Some(Arc::new(presentation));
+                        *slot = Some(presentation);
                     }
                     cx.notify();
                     true

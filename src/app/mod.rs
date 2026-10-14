@@ -35,7 +35,9 @@ mod files;
 mod import;
 mod notice;
 mod palette;
+mod project_menu;
 mod rail;
+mod reader;
 mod review;
 mod session;
 mod settings;
@@ -57,6 +59,13 @@ gpui_kit::actions!(
         PreviousChange,
         FocusDiff,
         FocusFileSearch,
+        CopyRelativePath,
+        CopyAbsolutePath,
+        RevealFile,
+        ZoomIn,
+        ZoomOut,
+        ResetZoom,
+        ToggleWrap,
         ToggleGroup,
         StageFile,
         StageAll,
@@ -88,6 +97,25 @@ pub struct RemoveProject {
 pub struct EditProject {
     pub id: u64,
 }
+#[derive(Clone, PartialEq, serde::Deserialize, gpui_kit::Action)]
+#[action(namespace = diffy, no_json)]
+pub struct OpenProjectIn {
+    pub id: u64,
+    pub app: crate::project_apps::ProjectApp,
+}
+#[derive(Clone, PartialEq, serde::Deserialize, gpui_kit::Action)]
+#[action(namespace = diffy, no_json)]
+pub struct CopyPath {
+    pub id: u64,
+    pub path: String,
+    pub absolute: bool,
+}
+#[derive(Clone, PartialEq, serde::Deserialize, gpui_kit::Action)]
+#[action(namespace = diffy, no_json)]
+pub struct RevealPath {
+    pub id: u64,
+    pub path: String,
+}
 
 pub fn init(cx: &mut App) {
     fonts::init(cx);
@@ -101,6 +129,13 @@ pub fn init(cx: &mut App) {
             gpui_kit::MenuItem::action("Show All", ShowAll),
             gpui_kit::MenuItem::Separator,
             gpui_kit::MenuItem::action("Quit Diffy", Quit),
+        ]),
+        gpui_kit::Menu::new("View").items([
+            gpui_kit::MenuItem::action("Increase Diff Font Size", ZoomIn),
+            gpui_kit::MenuItem::action("Decrease Diff Font Size", ZoomOut),
+            gpui_kit::MenuItem::action("Reset Diff Font Size", ResetZoom),
+            gpui_kit::MenuItem::Separator,
+            gpui_kit::MenuItem::action("Toggle Line Wrapping", ToggleWrap),
         ]),
         gpui_kit::Menu::new("File").items([
             gpui_kit::MenuItem::action("Open Repository…", OpenProject),
@@ -129,6 +164,12 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-shift-s", ToggleGroup, Some("Diffy")),
         KeyBinding::new("secondary-s", StageFile, Some("Diffy")),
         KeyBinding::new("secondary-q", Quit, Some("Diffy")),
+        KeyBinding::new("secondary-=", ZoomIn, Some("Diffy")),
+        KeyBinding::new("secondary-+", ZoomIn, Some("Diffy")),
+        KeyBinding::new("secondary-shift-=", ZoomIn, Some("Diffy")),
+        KeyBinding::new("secondary-shift-+", ZoomIn, Some("Diffy")),
+        KeyBinding::new("secondary--", ZoomOut, Some("Diffy")),
+        KeyBinding::new("secondary-0", ResetZoom, Some("Diffy")),
     ]);
 }
 
@@ -140,6 +181,7 @@ pub struct Diffy {
     next_id: u64,
     state_path: Option<PathBuf>,
     state_error: Option<String>,
+    state_restore_failed: bool,
     restoring: bool,
     sidebar_width: f32,
     command: Entity<CommandState>,
@@ -147,6 +189,7 @@ pub struct Diffy {
     previous_focus: Option<FocusHandle>,
     hovered_project: Option<usize>,
     settings: Option<settings::ProjectSettings>,
+    project_apps: project_menu::Runtime,
     repeat_direction: Option<isize>,
     file_repeat: Option<Task<()>>,
     file_key_probe: fn(isize) -> bool,
@@ -154,6 +197,13 @@ pub struct Diffy {
     file_scroll_axis: Option<files::FileScrollAxis>,
     navigation_save: Option<Task<()>>,
     persisted_state: Option<state::SavedState>,
+    preview_cache: crate::repository::SharedPreviewCache,
+    state_writer: Option<state::Writer>,
+    state_save_task: Option<Task<()>>,
+    closing: bool,
+    quit_subscription: Option<Subscription>,
+    reader: state::ReaderSettings,
+    preview_requests: u64,
     updates: updates::Controller,
     update_task: Option<Task<()>>,
     _keyboard_subscription: Subscription,
@@ -243,6 +293,16 @@ impl Render for Diffy {
                 this.reset_file_scroll_unless_command(event);
             }))
             .on_action(cx.listener(|this, a: &EditProject, w, cx| this.open_settings(a.id, w, cx)))
+            .on_action(cx.listener(|this, a: &OpenProjectIn, w, cx| this.open_project_in(a, w, cx)))
+            .on_action(cx.listener(|this, _: &CopyRelativePath, _, cx| this.copy_path(false, cx)))
+            .on_action(cx.listener(|this, action: &CopyPath, _, cx| this.copy_file_path(action.id, &action.path, action.absolute, cx)))
+            .on_action(cx.listener(|this, action: &RevealPath, _, cx| this.reveal_file_path(action.id, &action.path, cx)))
+            .on_action(cx.listener(|this, _: &CopyAbsolutePath, _, cx| this.copy_path(true, cx)))
+            .on_action(cx.listener(|this, _: &RevealFile, _, cx| this.reveal_file(cx)))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom(1., cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom(-1., cx)))
+            .on_action(cx.listener(|this, _: &ResetZoom, _, cx| this.zoom(13. - this.reader.font_size, cx)))
+            .on_action(cx.listener(|this, _: &ToggleWrap, _, cx| this.toggle_wrap(cx)))
             .on_action(cx.listener(|this, _: &StageAll, _, cx| this.stage_all(cx)))
             .on_action(cx.listener(|this, _: &OpenProject, w, cx| this.open_project(w, cx)))
             .on_action(cx.listener(|this, _: &ImportProjects, w, cx| this.open_import(w, cx)))
@@ -291,8 +351,7 @@ impl Render for Diffy {
             }))
             .on_action(cx.listener(|this, _: &Quit, _, cx| {
                 if this.updates.blocks_mutations() { return; }
-                this.persist(cx);
-                cx.quit();
+                this.exit(None, cx);
             }))
             .child(self.file_scroll_layer(cx))
             .children(self.state_error.as_ref().map(|error| {
