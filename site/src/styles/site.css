@@ -56,13 +56,25 @@ button:focus-visible {
   justify-content: space-between;
 }
 .wordmark {
+  color: #65ea73;
   font-size: 19px;
   font-weight: 500;
   letter-spacing: -0.8px;
   text-decoration: none;
 }
-.wordmark-dot {
-  color: var(--muted);
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .wordmark {
+    background-image: linear-gradient(110deg, #65ea73, #e4ed64 48%, #ff7168);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+@media (forced-colors: active) {
+  .wordmark {
+    background-image: none;
+    color: LinkText;
+  }
 }
 nav {
   display: flex;
