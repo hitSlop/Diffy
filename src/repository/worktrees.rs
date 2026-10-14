@@ -197,7 +197,11 @@ mod tests {
     fn main_linked_locked_missing_and_literal_paths_match_git() {
         let f = fixture::Fixture::new("worktrees");
         f.git(&["commit", "--allow-empty", "-m", "initial"]);
-        let linked = f.0.join("checkout with\nquote'ü");
+        let linked = f.0.join(if cfg!(windows) {
+            "checkout with quote'ü"
+        } else {
+            "checkout with\nquote'ü"
+        });
         f.git(&["worktree", "add", "-b", "topic", linked.to_str().unwrap()]);
         f.git(&[
             "worktree",

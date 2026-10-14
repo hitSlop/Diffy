@@ -14,7 +14,7 @@ npm run preview
 
 Set `DODO_CHECKOUT_URL` to the HTTPS hosted product checkout URL (for example `https://checkout.dodopayments.com/buy/pdt_example`) at build time. Do not set a private API key. Without the URL, the purchase button is disabled and shows “Checkout coming soon.”
 
-Configure a one-time USD $19.99 product in Dodo. The build sets the checkout return URL to `https://diffy.hitslop.com/thanks`. Put `https://diffy.hitslop.com/download` in the product's delivery instructions/external delivery link as well, so buyers can keep it. Dodo setup remains manual until the product is ready.
+Configure a one-time USD $14.99 product in Dodo. The build sets the checkout return URL to `https://diffy.hitslop.com/thanks`. Put `https://diffy.hitslop.com/downloads` in a Digital Files entitlement's external delivery link and attach it to the product as well, so buyers can keep it. Dodo setup remains manual until the product is ready.
 
 ```sh
 DODO_CHECKOUT_URL='https://checkout.dodopayments.com/buy/YOUR_PRODUCT_ID' npm run build
@@ -48,8 +48,24 @@ The commands above remain available for manual deployment with your existing loc
 
 Associate `diffy.hitslop.com` in the Pages project's custom domains, then point its DNS CNAME at the project's Pages hostname. Cloudflare must register the custom domain before its DNS redirect can work.
 
-`public/_redirects` sends `/download` to the fixed-name `Diffy-macos-aarch64.dmg` in GitHub's latest release. The release script creates an identical copy of the signed and notarized versioned DMG. Upload it with every release; never point the website at an unsigned build.
+The post-build `scripts/write-redirects.mjs` generates `dist/_redirects` from the same platform metadata used by the pages. `/download` retains its macOS behavior. `/download/macos`, `/download/windows`, and `/download/linux` use fixed-name assets in GitHub's latest release; unavailable targets redirect to `/downloads` instead. The release script creates an identical copy of the signed and notarized versioned DMG. Upload it with every release; never point the website at an unsigned build.
 
 The bundled web font uses the same Commit Mono v143 font as Diffy, under the included SIL Open Font License. The screenshot is stored losslessly as WebP. The mascot and social preview derive from existing project assets.
 
 The screenshot serves 480/960/1440px variants through `srcset`; the original 1920px image remains the full-resolution fallback and zoom link. Pointer motion is coalesced so the eye controller reads geometry at most once per animation frame.
+
+## Beta pricing and platform availability
+
+The landing page displays regular price $24.99 crossed out and $14.99 during beta. It keeps the purchase CTA and “Or build for free”; platform downloads are offered after purchase on `/thanks` and through Dodo delivery. There is no separate beta announcement line. macOS is Beta; Windows/Linux are Alpha. The purchase supports all platforms. Keep the Dodo product's actual one-time USD price at 1499 cents to match the site.
+
+`src/data/platforms.json` supplies download choices, requirements, asset names, and installation instructions for `/downloads` and `/thanks`. `DIFFY_RELEASED_PLATFORMS` is a comma-separated list of published platforms, default `macos`. After the complete release is verified and published, set the GitHub repository variable to `macos,windows,linux` and rebuild the site. Keep it at `macos` until then; the site never advertises missing assets.
+
+`node scripts/check-build.mjs` checks the built pricing, checkout return URL, availability, and redirect targets. Run it with the same environment used for `npm run build`. CI exercises both checkout configurations and all-platform availability.
+
+## Dodo dashboard setup
+
+No Dodo CLI or product is configured for this repository. Create one **Diffy — all desktop platforms** product with a one-time **USD $14.99** price (1499 cents), covering macOS beta and Windows/Linux alpha. Create a Digital Files entitlement named **Diffy downloads**, set its external link to **https://diffy.hitslop.com/downloads**, and attach it to the product. Suggested delivery instructions:
+
+> Choose your platform on the download page. All versions require Git. macOS is beta; Windows and Linux are early alphas with limited hardware testing. Save the page for future releases.
+
+Copy the hosted `https://checkout.dodopayments.com/buy/PRODUCT_ID` URL into the GitHub `DODO_CHECKOUT_URL` repository variable. The site adds the return URL `/thanks`. Keep checkout disabled until the product exists and its displayed charge matches $14.99. Public downloads and the return page do not verify payment or grant a license.

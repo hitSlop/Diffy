@@ -4,6 +4,7 @@ import argparse
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -45,4 +46,28 @@ with tempfile.TemporaryDirectory(prefix="diffy-package-") as directory:
         raise RuntimeError(f"Packaged repository check failed: {result.stdout}")
     if state.read_bytes() != original:
         raise RuntimeError("Package installation or --check modified preferences.")
+    # Sign the actual package with a throwaway key. This exercises the same
+    # verifier and installer adapter without putting production signing material in CI.
+    key = directory / "fixture.key"
+    packager = root / "target/tools/bin" / ("cargo-packager.exe" if args.platform == "windows" else "cargo-packager")
+    subprocess.run([str(packager), "signer", "generate", "--ci", "--password", "ci-fixture", "--path", str(key)], check=True, capture_output=True)
+    sign_env = {**env, "CARGO_PACKAGER_SIGN_PRIVATE_KEY": str(key), "CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD": "ci-fixture"}
+    subprocess.run([str(packager), "signer", "sign", str(package)], check=True, env=sign_env, capture_output=True)
+    signature = Path(str(package) + ".sig")
+    marker = directory / "updated-render.txt"
+    update_env = {**env, "DIFFY_CI_UPDATE_PACKAGE": str(package), "DIFFY_CI_UPDATE_SIGNATURE": str(signature),
+                  "DIFFY_CI_UPDATE_PUBLIC": str(key) + ".pub", "DIFFY_CI_UPDATE_DESTINATION": str(installation if args.platform == "windows" else executable),
+                  "DIFFY_SMOKE_RESULT": str(marker)}
+    if args.platform == "linux":
+        executable.write_bytes(b"old appimage fixture")
+    subprocess.run(["cargo", "test", "--locked", "--test", "update_desktop", "apply_signed_native_package", "--", "--ignored", "--exact"], cwd=root, env=update_env, check=True, timeout=120)
+    if args.platform == "linux":
+        subprocess.run([str(executable), "--smoke-test"], env=update_env, check=True, timeout=45)
+    deadline = time.monotonic() + 60
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if not marker.exists() or marker.read_text() != "rendered\n":
+        raise RuntimeError("The updated application did not relaunch and render.")
+    if state.read_bytes() != original:
+        raise RuntimeError("Update/restart changed preferences.")
 print("Installed package, CLI Git access, and preference preservation verified.")

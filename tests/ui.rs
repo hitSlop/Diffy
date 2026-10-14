@@ -99,7 +99,7 @@ fn main() {
             );
             w.render_frame(cx);
         };
-        let cmd = Modifiers::command();
+        let cmd = Modifiers::secondary_key();
         scroll(
             w,
             ScrollDelta::Pixels(point(px(0.), px(-39.))),
@@ -172,7 +172,7 @@ fn main() {
             Some("src/duration.rs"),
             "One mouse-wheel notch with Command moves one file"
         );
-        w.press("cmd-p", cx);
+        w.press("secondary-p", cx);
         w.render_frame(cx);
         assert!(view.read(cx).palette_is_open());
         scroll(
@@ -190,7 +190,7 @@ fn main() {
         w.press("escape", cx);
         w.render_frame(cx);
         assert!(!view.read(cx).palette_is_open());
-        w.press("cmd-up", cx);
+        w.press("secondary-up", cx);
         w.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_file().map(|p| p.as_str()),
@@ -202,23 +202,23 @@ fn main() {
     // Quick taps never throttle, and holding repeats even without native repeat/key-up events.
     cx.update_window(handle, |_, w, cx| {
         view.update(cx, |v, _| v.set_file_key_probe(file_keys_held));
-        w.press("cmd-down", cx);
+        w.press("secondary-down", cx);
         w.render_frame(cx);
-        w.press("cmd-down", cx);
+        w.press("secondary-down", cx);
         w.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_file().map(|p| p.as_str()),
             Some("tests/timeout_test.rs")
         );
-        w.press("cmd-up", cx);
+        w.press("secondary-up", cx);
         w.render_frame(cx);
-        w.press("cmd-up", cx);
+        w.press("secondary-up", cx);
         w.render_frame(cx);
         FILE_KEYS_HELD.store(true, Ordering::SeqCst);
         use gpui_kit::InputEvent as _;
         w.dispatch_event(
             gpui_kit::KeyDownEvent {
-                keystroke: gpui_kit::Keystroke::parse("cmd-down").unwrap(),
+                keystroke: gpui_kit::Keystroke::parse("secondary-down").unwrap(),
                 is_held: false,
                 prefer_character_input: false,
             }
@@ -267,7 +267,7 @@ fn main() {
         for _ in 0..2 {
             w.dispatch_event(
                 gpui_kit::KeyDownEvent {
-                    keystroke: gpui_kit::Keystroke::parse("cmd-up").unwrap(),
+                    keystroke: gpui_kit::Keystroke::parse("secondary-up").unwrap(),
                     is_held: false,
                     prefer_character_input: false,
                 }
@@ -285,8 +285,8 @@ fn main() {
     .unwrap();
 
     cx.update_window(handle, |_, window, cx| {
-        window.press("cmd-enter", cx);
-        window.press("cmd-shift-down", cx);
+        window.press("secondary-enter", cx);
+        window.press("secondary-shift-down", cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -321,15 +321,15 @@ fn main() {
             view.read(cx).selected_file().map(|p| p.as_str()),
             Some("src/duration.rs")
         );
-        window.press("cmd-down", cx);
+        window.press("secondary-down", cx);
         window.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_file().map(|p| p.as_str()),
             Some("tests/timeout_test.rs")
         );
-        window.press("cmd-up", cx);
+        window.press("secondary-up", cx);
         window.render_frame(cx);
-        window.press("cmd-shift-s", cx);
+        window.press("secondary-shift-s", cx);
         window.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_group(),
@@ -345,35 +345,35 @@ fn main() {
         );
         window.click("src/duration.rs", cx);
         window.render_frame(cx);
-        window.press("cmd-s", cx);
+        window.press("secondary-s", cx);
         window.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_file().map(|p| p.as_str()),
             Some("src/duration.rs"),
             "Demo mutation disabled"
         );
-        window.press("cmd-shift-s", cx);
+        window.press("secondary-shift-s", cx);
         window.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_file().map(|p| p.as_str()),
             Some("src/duration.rs"),
             "Scope selection retained"
         );
-        window.press("cmd-shift-s", cx);
+        window.press("secondary-shift-s", cx);
         window.render_frame(cx);
-        window.press("cmd-shift-down", cx);
+        window.press("secondary-shift-down", cx);
         window.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_group(),
             diffy::repository::ChangeGroup::Changes
         );
-        window.press("cmd-shift-s", cx);
+        window.press("secondary-shift-s", cx);
         window.render_frame(cx);
         assert!(
             view.read(cx).selected_file().is_none(),
             "Slide staged scope empty"
         );
-        window.press("cmd-shift-up", cx);
+        window.press("secondary-shift-up", cx);
         window.render_frame(cx);
         assert_eq!(
             view.read(cx).selected_group(),
@@ -444,7 +444,7 @@ fn main() {
     macro_rules! palette_confirm {
         ($query:expr) => {{
             cx.update_window(handle, |_, w, cx| {
-                w.press("cmd-p", cx);
+                w.press("secondary-p", cx);
                 w.render_frame(cx);
                 assert!(view.read(cx).palette_is_open());
                 w.input($query, cx);
@@ -490,7 +490,7 @@ fn main() {
         w.press("escape", cx);
         w.render_frame(cx);
         assert!(!view.read(cx).palette_is_open());
-        w.press("cmd-p", cx);
+        w.press("secondary-p", cx);
         w.render_frame(cx);
     })
     .unwrap();
@@ -629,7 +629,7 @@ fn main() {
     settle!();
     cx.update_window(real_handle, |_, w, cx| {
         assert!(real_view.read(cx).selected_file().is_none());
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
         w.click("stage-all", cx);
     })
@@ -637,7 +637,7 @@ fn main() {
     settle!();
     cx.update_window(real_handle, |_, w, cx| {
         assert!(real_view.read(cx).selected_file().is_none());
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
     })
     .unwrap();
@@ -658,14 +658,14 @@ fn main() {
             Some("a.rs"),
             "Staging a different row preserves selection"
         );
-        w.press("cmd-s", cx);
-        w.press("cmd-s", cx);
+        w.press("secondary-s", cx);
+        w.press("secondary-s", cx);
     })
     .unwrap();
     settle!();
     cx.update_window(real_handle, |_, w, cx| {
         assert!(real_view.read(cx).selected_file().is_none());
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
         assert_eq!(
             real_view.read(cx).selected_file().map(|p| p.as_str()),
@@ -684,7 +684,7 @@ fn main() {
             real_view.read(cx).selected_file().map(|p| p.as_str()),
             Some("b.rs")
         );
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
         assert_eq!(
             real_view.read(cx).selected_file().map(|p| p.as_str()),
@@ -693,7 +693,7 @@ fn main() {
     })
     .unwrap();
     std::fs::write(root.join(".git/index.lock"), b"ui test lock").unwrap();
-    cx.update_window(real_handle, |_, w, cx| w.press("cmd-s", cx))
+    cx.update_window(real_handle, |_, w, cx| w.press("secondary-s", cx))
         .unwrap();
     settle!();
     cx.update_window(real_handle, |_, w, cx| {
@@ -708,7 +708,7 @@ fn main() {
     })
     .unwrap();
     std::fs::remove_file(root.join(".git/index.lock")).unwrap();
-    cx.update_window(real_handle, |_, w, cx| w.press("cmd-s", cx))
+    cx.update_window(real_handle, |_, w, cx| w.press("secondary-s", cx))
         .unwrap();
     settle!();
     cx.update_window(real_handle, |_, _, cx| {
@@ -718,7 +718,7 @@ fn main() {
     assert_eq!(std::fs::read_to_string(root.join("a.rs")).unwrap(), "one\n");
     assert_eq!(std::fs::read_to_string(root.join("b.rs")).unwrap(), "two\n");
     cx.update_window(real_handle, |_, w, cx| {
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
         w.click("b.rs", cx);
         w.dispatch_action(Box::new(app::SplitMode), cx);
@@ -771,7 +771,7 @@ fn main() {
     cx.update_window(real_handle, |_, w, cx| {
         w.render_frame(cx);
         assert!(w.try_find("project-settings").is_some());
-        w.press("cmd-a", cx);
+        w.press("secondary-a", cx);
         w.input("Temporary name", cx);
         w.press("escape", cx);
         w.render_frame(cx);
@@ -787,7 +787,7 @@ fn main() {
     cx.run_until_parked();
     cx.update_window(real_handle, |_, w, cx| {
         w.render_frame(cx);
-        w.press("cmd-a", cx);
+        w.press("secondary-a", cx);
         w.input("Test garden", cx);
         w.click("project-emoji", cx);
         w.input("🪴", cx);
@@ -814,7 +814,7 @@ fn main() {
         let hex = color.read(cx).hex_input().clone();
         hex.read(cx).focus_handle(cx).focus(w, cx);
         w.render_frame(cx);
-        w.press("cmd-a", cx);
+        w.press("secondary-a", cx);
         w.input("#FF8175", cx);
     })
     .unwrap();
@@ -993,9 +993,9 @@ fn main() {
         w.render_frame(cx);
         assert_eq!(restored_view.read(cx).project_count(), 0);
         assert!(w.try_find("open-empty").is_some());
-        w.press("cmd-down", cx);
-        w.press("cmd-shift-down", cx);
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-down", cx);
+        w.press("secondary-shift-down", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
     })
     .unwrap();
@@ -1158,7 +1158,7 @@ fn main() {
                 .any(|row| row.label() == Some("TAIL_3000")),
             "Wheel scrolling reaches the final line despite horizontal overflow"
         );
-        w.press("cmd-enter", cx);
+        w.press("secondary-enter", cx);
         w.press("home", cx);
         w.render_frame(cx);
         w.press("end", cx);
@@ -1171,7 +1171,7 @@ fn main() {
         );
         w.click("split", cx);
         w.render_frame(cx);
-        w.press("cmd-enter", cx);
+        w.press("secondary-enter", cx);
         w.press("end", cx);
         w.render_frame(cx);
         assert!(
@@ -1321,7 +1321,7 @@ fn main() {
             large_view.read(cx).selected_file().map(|p| p.as_str()),
             Some("new.txt")
         );
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
         assert_eq!(
             large_view.read(cx).selected_file().map(|p| p.as_str()),
@@ -1352,7 +1352,7 @@ fn main() {
     std::fs::create_dir_all(large_root.join(long_path).parent().unwrap()).unwrap();
     std::fs::write(large_root.join(long_path), "export const ready = true;\n").unwrap();
     cx.update_window(large_handle, |_, w, cx| {
-        w.press("cmd-shift-s", cx);
+        w.press("secondary-shift-s", cx);
         w.render_frame(cx);
     })
     .unwrap();
@@ -1460,7 +1460,7 @@ fn main() {
         assert_eq!(second.origin.y - first.origin.y, px(30.));
         assert_eq!(cli.origin.y - second.origin.y, px(58.));
         assert_eq!(first.size.height, px(30.));
-        w.press("cmd-f", cx);
+        w.press("secondary-f", cx);
         w.input("cli.rs", cx);
     })
     .unwrap();
@@ -1473,7 +1473,7 @@ fn main() {
         assert!(w.try_find("src/cli.rs").is_some());
         assert!(w.try_find("folder:src").is_some());
         assert_ne!(w.find("stage-all").disabled(), Some(true));
-        w.press("cmd-a", cx);
+        w.press("secondary-a", cx);
         w.input("zzzz-no-such-file", cx);
     })
     .unwrap();
@@ -1483,7 +1483,7 @@ fn main() {
         assert!(w.try_find("src/cli.rs").is_none());
         assert!(w.try_find("file-search-empty").is_some());
         assert_ne!(w.find("stage-all").disabled(), Some(true));
-        w.press("cmd-a", cx);
+        w.press("secondary-a", cx);
         w.press("backspace", cx);
     })
     .unwrap();

@@ -72,8 +72,15 @@ def main():
     if args.platform == "linux":
         stable.chmod(package.stat().st_mode)
     assets = [package, stable]
+    info = out / f"build-{args.platform}-x86_64.json"
+    info.write_text(json.dumps({"version": version, "target": target,
+        "source_tree": run(["git", "rev-parse", "HEAD^{tree}"], env, True).strip(),
+        "package": package.name, "sha256": hashlib.sha256(package.read_bytes()).hexdigest()}, indent=2) + "\n")
+    assets.append(info)
     if not args.unsigned:
         key = os.environ.get("DIFFY_UPDATER_KEY", str(ROOT / ".release-secrets/updater.key"))
+        if Path(key + ".pub").read_text().strip() != (ROOT / "packaging/updater.pub").read_text().strip():
+            raise RuntimeError("The signing key doesn't match the public key trusted by Diffy.")
         password_file = ROOT / ".release-secrets/updater.password"
         password = os.environ.get("DIFFY_UPDATER_PASSWORD")
         if password is None:

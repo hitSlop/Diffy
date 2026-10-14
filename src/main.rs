@@ -10,9 +10,9 @@ fn main() {
     let _trace = diffy::profiling::init();
     let mut paths = Vec::new();
     let mut check = false;
-    let mut demo_mode = false;
+    let mut demo_mode = std::env::var_os("DIFFY_SMOKE_RESULT").is_some();
     let mut cli = false;
-    let mut smoke = false;
+    let mut smoke = demo_mode;
     let mut literal = false;
     for argument in std::env::args_os().skip(1) {
         if literal {

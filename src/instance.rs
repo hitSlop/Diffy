@@ -121,7 +121,7 @@ fn start_in(
         .open(directory.join("instance.lock"))?;
     match lock.try_lock_exclusive() {
         Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+        Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
             let deadline = Instant::now() + TIMEOUT;
             loop {
                 match Stream::connect(endpoint(directory)?) {
@@ -135,6 +135,7 @@ fn start_in(
                         }
                         send(&mut stream, &request, deadline)?;
                         let reply = receive(&mut stream, deadline)?;
+                        send(&mut stream, b"ack\n", deadline)?;
                         return if reply == b"ok" {
                             Ok(Start::Forwarded)
                         } else {
@@ -175,11 +176,17 @@ fn start_in(
                         let url = crate::cli::open_url(&request.paths).map_err(io::Error::other)?;
                         sender.try_send(vec![url]).map_err(io::Error::other)
                     });
-                    let _ = send(
+                    if send(
                         &mut stream,
                         if result.is_ok() { b"ok\n" } else { b"error\n" },
                         deadline,
-                    );
+                    )
+                    .is_ok()
+                    {
+                        // Keep the Windows pipe alive until the client consumed
+                        // the reply. Disconnecting first can discard buffered bytes.
+                        let _ = receive(&mut stream, deadline);
+                    }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(10))
@@ -274,6 +281,7 @@ mod tests {
         let deadline = Instant::now() + TIMEOUT;
         send(&mut stream, b"{\"version\":2,\"paths\":[]}\n", deadline).unwrap();
         assert_eq!(receive(&mut stream, deadline).unwrap(), b"error");
+        send(&mut stream, b"ack\n", deadline).unwrap();
         assert!(receiver.try_recv().is_err());
     }
 }

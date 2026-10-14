@@ -158,6 +158,11 @@ def main():
     verify_env = {**env, "DIFFY_TEST_UPDATE_ARCHIVE": str(archive), "DIFFY_TEST_UPDATE_SIGNATURE": str(signature), "DIFFY_TEST_UPDATE_VERSION": version}
     run(["cargo", "test", "--locked", "--test", "update_archive", "signed_app_archive_installs_and_relaunches_an_isolated_bundle", "--", "--ignored", "--exact"], verify_env)
     assets = [dmg, stable_dmg, archive, signature, manifest]
+    info = output / "build-macos-aarch64.json"
+    info.write_text(json.dumps({"version": version, "target": "aarch64-apple-darwin",
+        "source_tree": run(["git", "rev-parse", "HEAD^{tree}"], env, True).strip(),
+        "package": archive.name, "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}, indent=2) + "\n")
+    assets.append(info)
     (output / "SHA256SUMS").write_text("".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in assets))
     print(f"Signed, notarized release assets ready in {output}. Publication is not automatic.")
 

@@ -23,7 +23,6 @@ if (checkout) {
       <h1 id="hero-title" class="visually-hidden">Diffy — i literally only show you diffs</h1>
       <Mascot />
       <p class="intro">A native Git diff viewer, built in Rust.</p>
-      <p class="beta-label">Diffy is in beta.</p>
       <p class="agent-line">Keep up with your agents’ changes.</p>
       <p class="compatibility">{platforms.map((platform, index) => <>{index > 0 && <span aria-hidden="true"> · </span>}{platform.name} {platform.stage.toLowerCase()}</>)} <span aria-hidden="true">·</span> Requires Git</p>
       <div class="purchase">
@@ -32,7 +31,6 @@ if (checkout) {
         {!purchaseUrl && <p id="checkout-note" class="checkout-note">Checkout coming soon.</p>}
         <a target="_blank" rel="noopener" class="build-link" href="https://github.com/hitSlop/Diffy">Or build for free <span aria-hidden="true">↗</span></a>
         <p class="support-note">One purchase. All platforms. Your purchase supports Diffy.</p>
-        <a class="build-link" href="/downloads">Downloads & installation <span aria-hidden="true">↓</span></a>
       </div>
     </section>
     <figure class="screenshot frame">

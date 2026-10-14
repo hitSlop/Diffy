@@ -19,7 +19,6 @@
   --muted: #929297;
   --quiet: #737379;
 }
-.beta-label { color: #e4ed64; font-size: 12px; margin: 12px 0; }
 .beta-price { font-size: 14px; margin: 0 0 16px; color: var(--muted); }
 .beta-price s { margin-right: 10px; }
 .beta-price strong { font-size: 22px; font-weight: 500; color: #fff; }
