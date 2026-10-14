@@ -540,13 +540,11 @@ mod tests {
 
     impl TestRepository {
         fn new() -> Self {
-            let suffix = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let path = tempfile::Builder::new()
+                .prefix("diffy-repository-test-")
+                .tempdir()
                 .unwrap()
-                .as_nanos();
-            let path =
-                std::env::temp_dir().join(format!("differ-test-{}-{suffix}", std::process::id()));
-            std::fs::create_dir(&path).unwrap();
+                .keep();
             git(&path, &["init", "--initial-branch=main"]).unwrap();
             Self(path)
         }

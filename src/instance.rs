@@ -31,6 +31,7 @@ pub enum Start {
     Primary(Instance),
 }
 pub struct Instance {
+    lock: File,
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -40,6 +41,9 @@ impl Drop for Instance {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
+        // The listener has stopped and reclaimed its name. Release the lock
+        // even if a forked child still holds an inherited file description.
+        let _ = fs2::FileExt::unlock(&self.lock);
     }
 }
 
@@ -188,7 +192,6 @@ fn start_in(
     let stop = Arc::new(AtomicBool::new(false));
     let stopped = stop.clone();
     let worker = thread::spawn(move || {
-        let _lock: File = lock;
         while !stopped.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok(mut stream) => {
@@ -223,6 +226,7 @@ fn start_in(
         drop(listener);
     });
     Ok(Start::Primary(Instance {
+        lock,
         stop,
         worker: Some(worker),
     }))
@@ -295,6 +299,10 @@ mod tests {
             crate::cli::paths_from_url(&receiver.recv_blocking().unwrap()[0]).unwrap(),
             vec![path]
         );
+        // A forked child may retain the same file description during exec.
+        // Closing our handle alone must not prevent immediate restart.
+        #[cfg(unix)]
+        let _inherited_lock = primary.lock.try_clone().unwrap();
         drop(primary);
         assert!(matches!(
             start_in(temp.path(), vec![], sender).unwrap(),
