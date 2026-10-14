@@ -1,7 +1,7 @@
 name: macOS checks
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths-ignore: ['**/*.md', 'assets/screenshot.png']
     tags: ['v*']
   pull_request:
