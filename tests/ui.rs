@@ -739,6 +739,9 @@ fn main() {
     .unwrap();
     cx.advance_clock(std::time::Duration::from_millis(300));
     cx.run_until_parked();
+    cx.update(|cx| real_view.read(cx).preferences_flush().unwrap())
+        .wait()
+        .unwrap();
     let saved_width = diffy::state::load(&prefs).unwrap().sidebar_width.unwrap();
     assert!(saved_width > 320.);
     // Right-click opens a menu first; Edit opens settings.
@@ -836,6 +839,9 @@ fn main() {
         w.render_frame(cx);
     })
     .unwrap();
+    cx.update(|cx| real_view.read(cx).preferences_flush().unwrap())
+        .wait()
+        .unwrap();
     let saved = diffy::state::load(&prefs).unwrap();
     assert_eq!(saved.projects.len(), 1);
     assert!(saved.projects[0].staged);
@@ -999,6 +1005,9 @@ fn main() {
         w.render_frame(cx);
     })
     .unwrap();
+    cx.update(|cx| restored_view.read(cx).preferences_flush().unwrap())
+        .wait()
+        .unwrap();
     assert!(diffy::state::load(&prefs).unwrap().projects.is_empty());
     assert_eq!(std::fs::read_to_string(root.join("a.rs")).unwrap(), "one\n");
     // Resolve nested folders to one repository and keep missing roots recoverable.

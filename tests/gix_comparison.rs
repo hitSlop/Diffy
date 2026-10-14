@@ -44,6 +44,16 @@ fn commit(f: &fixture::Fixture) {
     f.git(&["commit", "-m", "fixture"]);
 }
 
+fn git_directory_pattern(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    #[cfg(windows)]
+    let path = path
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&path)
+        .replace('\\', "/");
+    format!("{path}/.git")
+}
+
 #[test]
 fn production_adapter_matches_complete_metadata_for_both_workloads() {
     for mixed in [false, true] {
@@ -150,12 +160,23 @@ fn ignore_rules_conditional_includes_and_status_overrides() {
     let excludes = f.0.join(".git/extra-excludes");
     fs::write(&excludes, "config-only.txt\n").unwrap();
     let included = f.0.join(".git/included-config");
-    fs::write(&included, format!("[core]\nexcludesFile = {}\n[status]\nshowUntrackedFiles = no\nrenames = false\n[diff]\nrenames = copies\n", excludes.display())).unwrap();
+    fs::write(
+        &included,
+        "[status]\nshowUntrackedFiles = no\nrenames = false\n[diff]\nrenames = copies\n",
+    )
+    .unwrap();
+    f.git(&[
+        "config",
+        "--file",
+        included.to_str().unwrap(),
+        "core.excludesFile",
+        excludes.to_str().unwrap(),
+    ]);
     f.git(&[
         "config",
         &format!(
-            "includeIf.gitdir:{}/.git.path",
-            fs::canonicalize(&f.0).unwrap().display()
+            "includeIf.gitdir:{}.path",
+            git_directory_pattern(&fs::canonicalize(&f.0).unwrap())
         ),
         included.to_str().unwrap(),
     ]);
@@ -485,11 +506,13 @@ fn alternate_index_and_global_config_are_preserved_via_fallback() {
     let global = f.0.join(".git/global-config");
     let excludes = f.0.join(".git/global-excludes");
     fs::write(&excludes, "global-only.txt\n").unwrap();
-    fs::write(
-        &global,
-        format!("[core]\nexcludesFile = {}\n", excludes.display()),
-    )
-    .unwrap();
+    f.git(&[
+        "config",
+        "--file",
+        global.to_str().unwrap(),
+        "core.excludesFile",
+        excludes.to_str().unwrap(),
+    ]);
     f.write("global-only.txt", "ignored\n");
     let original = fs::read(f.0.join(".git/index")).unwrap();
     let alt_before = fs::read(&alternate).unwrap();

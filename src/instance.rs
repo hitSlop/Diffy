@@ -142,6 +142,16 @@ fn start_in(
             loop {
                 match connect(directory, deadline) {
                     Ok(mut stream) => {
+                        #[cfg(windows)]
+                        if let Ok(peer) = stream.peer_creds()
+                            && let Some(pid) = peer.pid()
+                        {
+                            // Transfer foreground activation permission only to
+                            // the app process at the connected per-user endpoint.
+                            unsafe {
+                                windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow(pid);
+                            }
+                        }
                         stream.set_nonblocking(true)?;
                         let mut request = serde_json::to_vec(&Request { version: 1, paths })
                             .map_err(io::Error::other)?;
