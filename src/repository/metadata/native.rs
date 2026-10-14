@@ -61,6 +61,17 @@ pub(super) fn load(path: &Path) -> Result<MetadataSnapshot, &'static str> {
     // Unsupported index states go to Git before starting the expensive scan.
     let index = repo.index_or_empty().map_err(|_| "native index read")?;
     let config = repo.config_snapshot();
+    // Windows canonical paths can use extended/long names while Git's
+    // conditional include matcher sees DOS aliases. The pinned gix release
+    // resolves these differently; retain Git's ignore/config decisions.
+    if cfg!(windows)
+        && config
+            .plumbing()
+            .sections()
+            .any(|section| section.header().name().eq_ignore_ascii_case(b"includeIf"))
+    {
+        return Err("conditional Git configuration on Windows");
+    }
     if config.string("core.autocrlf").is_some() && config.boolean("core.autocrlf") != Some(false) {
         return Err("worktree content conversion");
     }

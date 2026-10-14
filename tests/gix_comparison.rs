@@ -193,7 +193,20 @@ fn ignore_rules_conditional_includes_and_status_overrides() {
         f.write(name, "new\n");
     }
     fs::create_dir(f.0.join("empty-dir")).unwrap();
-    let listing = parity(&f.0, MetadataBackend::Gix);
+    let listing = parity(
+        &f.0,
+        if cfg!(windows) {
+            MetadataBackend::Git
+        } else {
+            MetadataBackend::Gix
+        },
+    );
+    if cfg!(windows) {
+        assert_eq!(
+            listing.fallback_reason,
+            Some("conditional Git configuration on Windows")
+        );
+    }
     assert!(
         listing.groups[1]
             .iter()
