@@ -51,11 +51,11 @@ Notarization reports stay local. Never upload `.release-secrets`, VISIONCAL cred
 
 ## Draft release
 
-Commit the validated source, push `main`, and tag the exact release commit. Create a draft rather than publishing:
+Commit the validated source, push `master`, and tag the exact release commit. Create a draft rather than publishing:
 
 ```sh
 git tag v0.2.1
-git push origin main v0.2.1
+git push origin master v0.2.1
 gh release create v0.2.1 --repo hitSlop/diffy --draft --verify-tag \
   --title 'Diffy v0.2.1' --notes-file packaging/release-notes.md \
   dist/release/Diffy_0.2.1_aarch64.dmg \
