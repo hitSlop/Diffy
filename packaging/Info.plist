@@ -12,6 +12,12 @@
 	<string>com.hitslop.diffy</string>
 	<key>CFBundleName</key>
 	<string>Diffy</string>
+	<key>CFBundleURLTypes</key>
+	<array><dict>
+		<key>CFBundleURLName</key><string>com.hitslop.diffy.open</string>
+		<key>CFBundleURLSchemes</key><array><string>diffy</string></array>
+		<key>CFBundleTypeRole</key><string>Viewer</string>
+	</dict></array>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>LSMinimumSystemVersion</key>

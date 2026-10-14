@@ -43,6 +43,15 @@ fn main() {
     cx.run_until_parked();
     cx.update_window(handle, |_, window, cx| window.render_frame(cx))
         .unwrap();
+    cx.update_window(handle, |_, _, cx| {
+        let id = view.read(cx).active_project_id().unwrap();
+        assert_eq!(
+            view.read(cx).project_changed_count(id),
+            Some(6),
+            "Partially staged files count once in the project badge"
+        );
+    })
+    .unwrap();
     let unified = cx.capture_screenshot(handle).expect("Metal capture");
     std::fs::create_dir_all("target/previews").unwrap();
     unified.save("target/previews/diffy-unified.png").unwrap();
@@ -585,6 +594,22 @@ fn main() {
         w.render_frame(cx);
     })
     .unwrap();
+    // Resize the actual divider and persist only after the gesture settles.
+    cx.update_window(real_handle, |_, w, cx| {
+        let before = w.find("file-list").bounds();
+        let from = gpui_kit::point(before.origin.x - px(1.), before.origin.y + px(120.));
+        w.drag(from, gpui_kit::point(from.x - px(40.), from.y), cx);
+        w.render_frame(cx);
+        assert!(
+            real_view.read(cx).sidebar_width() > 320.,
+            "Dragging widens the sidebar"
+        );
+    })
+    .unwrap();
+    cx.advance_clock(std::time::Duration::from_millis(300));
+    cx.run_until_parked();
+    let saved_width = diffy::state::load(&prefs).unwrap().sidebar_width.unwrap();
+    assert!(saved_width > 320.);
     // Right-click settings, cancellation, and saved appearance survive restart.
     cx.update_window(real_handle, |_, w, cx| {
         use gpui_kit::InputEvent as _;
@@ -801,6 +826,10 @@ fn main() {
                 .iter()
                 .any(|r| r.label() == Some("Test garden")),
             "Custom project name survives background reload and restart"
+        );
+        assert!(
+            (restored_view.read(cx).sidebar_width() - saved_width).abs() < 1.,
+            "Sidebar width survives restart"
         );
         w.dispatch_action(
             Box::new(app::EditProject {
@@ -1205,6 +1234,112 @@ fn main() {
         .unwrap()
         .save("target/previews/diffy-file-paths.png")
         .unwrap();
+    // Full paths align, and only directory transitions add space.
+    let alignment_paths = [
+        "README.md",
+        "packaging/Info.plist",
+        "src/app/files.rs",
+        "src/app/mod.rs",
+        "src/cli.rs",
+        "tests/ui.rs",
+    ];
+    for path in alignment_paths {
+        let file = large_root.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "alignment fixture\n").unwrap();
+    }
+    for _ in 0..500 {
+        cx.run_until_parked();
+        let done = cx
+            .update_window(large_handle, |_, w, cx| {
+                w.render_frame(cx);
+                alignment_paths
+                    .iter()
+                    .all(|path| w.try_find(*path).is_some())
+            })
+            .unwrap();
+        if done {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cx.update_window(large_handle, |_, w, cx| {
+        w.render_frame(cx);
+        let left = w.find("README.md").bounds().origin.x;
+        for path in alignment_paths {
+            assert_eq!(
+                w.find(path).bounds().origin.x,
+                left,
+                "{path} aligns with root files"
+            );
+        }
+        let packaging = w.find("packaging/Info.plist").bounds();
+        let first = w.find("src/app/files.rs").bounds();
+        let second = w.find("src/app/mod.rs").bounds();
+        let cli = w.find("src/cli.rs").bounds();
+        assert_eq!(first.origin.y - packaging.origin.y, px(34.));
+        assert_eq!(second.origin.y - first.origin.y, px(30.));
+        assert_eq!(cli.origin.y - second.origin.y, px(34.));
+        assert_eq!(first.size.height, px(30.));
+    })
+    .unwrap();
+    // External open requests select/add a project while preserving live badges on inactive ones.
+    let (inactive_id, baseline) = cx
+        .update_window(large_handle, |_, w, cx| {
+            let id = large_view.read(cx).active_project_id().unwrap();
+            let count = large_view.read(cx).project_changed_count(id).unwrap();
+            let request = diffy::cli::open_url(&[std::fs::canonicalize(&root).unwrap()]).unwrap();
+            let paths = diffy::cli::paths_from_url(&request).unwrap();
+            large_view.update(cx, |view, cx| view.open_paths(paths, w, cx));
+            (id, count)
+        })
+        .unwrap();
+    for _ in 0..500 {
+        cx.run_until_parked();
+        if cx
+            .update_window(large_handle, |_, _, cx| !large_view.read(cx).is_busy())
+            .unwrap()
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    std::fs::write(
+        large_root.join("badge-new.txt"),
+        "background project change\n",
+    )
+    .unwrap();
+    for _ in 0..500 {
+        cx.run_until_parked();
+        cx.advance_clock(std::time::Duration::from_millis(50));
+        let done = cx
+            .update_window(large_handle, |_, w, cx| {
+                w.render_frame(cx);
+                large_view.read(cx).project_changed_count(inactive_id) == Some(baseline + 1)
+            })
+            .unwrap();
+        if done {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cx.update_window(large_handle, |_, w, cx| {
+        assert_eq!(large_view.read(cx).project_count(), 2);
+        assert_ne!(large_view.read(cx).active_project_id(), Some(inactive_id));
+        assert_eq!(
+            large_view.read(cx).project_changed_count(inactive_id),
+            Some(baseline + 1)
+        );
+        large_view.update(cx, |view, cx| {
+            view.open_paths(vec![std::fs::canonicalize(&root).unwrap()], w, cx)
+        });
+        assert_eq!(
+            large_view.read(cx).project_count(),
+            2,
+            "Opening an existing project does not duplicate it"
+        );
+    })
+    .unwrap();
     std::fs::remove_dir_all(root).unwrap();
     println!("Native render and interaction checks passed; previews in target/previews.");
 }

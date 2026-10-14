@@ -1337,12 +1337,14 @@ dependencies = [
  "base64 0.22.1",
  "cargo-packager-updater",
  "gpui-kit",
+ "ignore",
  "minisign-verify",
  "notify",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]

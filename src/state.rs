@@ -30,6 +30,8 @@ pub struct SavedState {
     pub version: u32,
     pub projects: Vec<SavedProject>,
     pub active: Option<PathBuf>,
+    #[serde(default)]
+    pub sidebar_width: Option<f32>,
 }
 impl Default for SavedState {
     fn default() -> Self {
@@ -37,6 +39,7 @@ impl Default for SavedState {
             version: 1,
             projects: Vec::new(),
             active: None,
+            sidebar_width: None,
         }
     }
 }

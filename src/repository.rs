@@ -1,8 +1,12 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
+    ffi::OsString,
+    fs::File,
     hash::{Hash, Hasher},
+    io::Read,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
+    sync::OnceLock,
 };
 
 use gpui_kit::SharedString;
@@ -37,6 +41,8 @@ pub struct GroupSnapshot {
     pub patch: String,
     pub files: Vec<DiffFile>,
     pub revisions: HashMap<SharedString, u64>,
+    /// Hash of `patch`, so the viewer can skip an unchanged refresh without keeping a second copy.
+    pub fingerprint: u64,
 }
 impl GroupSnapshot {
     pub fn parse(patch: String) -> Result<Self, String> {
@@ -60,10 +66,13 @@ impl GroupSnapshot {
             })
             .collect();
         files.sort_by(|a, b| a.path().cmp(b.path()));
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        patch.hash(&mut hasher);
         Ok(Self {
             patch,
             files,
             revisions,
+            fingerprint: hasher.finish(),
         })
     }
 }
@@ -76,12 +85,22 @@ pub struct Snapshot {
     pub changes: GroupSnapshot,
 }
 
-fn git_command() -> Result<Command, String> {
+struct GitLaunch {
+    program: PathBuf,
+    path: Option<OsString>,
+}
+
+fn git_launch() -> Result<&'static GitLaunch, String> {
+    static CACHED: OnceLock<GitLaunch> = OnceLock::new();
+    if let Some(launch) = CACHED.get() {
+        return Ok(launch);
+    }
+    // Finder and LaunchServices need not inherit a shell PATH. Keep user
+    // entries first, then add the usual install locations. The successful
+    // lookup is reused: a refresh runs Git several times.
     let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|path| std::env::split_paths(&path).collect())
         .unwrap_or_default();
-    // Finder/LaunchServices need not inherit a shell's PATH. Keep user entries
-    // first, then add standard installation paths for Git and its helpers.
     #[cfg(target_os = "macos")]
     paths.extend(
         [
@@ -97,19 +116,28 @@ fn git_command() -> Result<Command, String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     paths.extend(["/usr/local/bin", "/usr/bin", "/bin"].map(PathBuf::from));
     let name = if cfg!(windows) { "git.exe" } else { "git" };
-    let executable = paths
+    let program = paths
         .iter()
         .map(|p| p.join(name))
         .find(|p| p.is_file())
         .ok_or("Git wasn't found. Install Git, then reopen Diffy.")?;
-    let mut command = Command::new(executable);
-    if let Ok(path) = std::env::join_paths(paths) {
+    let launch = GitLaunch {
+        program,
+        path: std::env::join_paths(paths).ok(),
+    };
+    Ok(CACHED.get_or_init(|| launch))
+}
+
+fn git_command() -> Result<Command, String> {
+    let launch = git_launch()?;
+    let mut command = Command::new(&launch.program);
+    if let Some(path) = &launch.path {
         command.env("PATH", path);
     }
     Ok(command)
 }
 
-fn git(path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+pub(crate) fn git(path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let output = git_command()?
         .args([
             "--no-pager",
@@ -127,19 +155,174 @@ fn git(path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     Ok(output.stdout)
 }
 
+/// Git is authoritative for excludesFile overrides, conditional includes and tracked paths.
+/// Feed names through stdin: check-ignore deliberately does not accept --literal-pathspecs.
+pub(crate) fn ignored_paths(root: &Path, paths: &[PathBuf]) -> Result<HashSet<PathBuf>, String> {
+    use std::io::Write as _;
+    if paths.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let mut child = git_command()?
+        .args(["--no-pager", "--no-optional-locks", "-C"])
+        .arg(root)
+        .args(["check-ignore", "-z", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let mut input = child.stdin.take().ok_or("Git stdin unavailable")?;
+    let (output, write) = std::thread::scope(|scope| {
+        let writer = scope.spawn(move || {
+            for path in paths {
+                input.write_all(path.as_os_str().as_encoded_bytes())?;
+                input.write_all(&[0])?;
+            }
+            Ok::<_, std::io::Error>(())
+        });
+        // Drain stdout while writing stdin; a large ignored batch exceeds pipe capacity.
+        let output = child.wait_with_output();
+        let write = writer.join().expect("Git input writer panicked");
+        (output, write)
+    });
+    let output = output.map_err(|e| e.to_string())?;
+    write.map_err(|e| e.to_string())?;
+    if !matches!(output.status.code(), Some(0 | 1)) {
+        return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+    }
+    Ok(text(output.stdout)?
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .collect())
+}
+
+pub(crate) struct RefreshSlot(async_channel::Sender<()>);
+impl Drop for RefreshSlot {
+    fn drop(&mut self) {
+        let _ = self.0.try_send(());
+    }
+}
+/// Bound aggregate refresh fan-out when restoring or watching many projects.
+pub(crate) async fn refresh_slot() -> RefreshSlot {
+    static POOL: OnceLock<(async_channel::Sender<()>, async_channel::Receiver<()>)> =
+        OnceLock::new();
+    let (tx, rx) = POOL.get_or_init(|| {
+        let (tx, rx) = async_channel::bounded(2);
+        tx.try_send(()).unwrap();
+        tx.try_send(()).unwrap();
+        (tx, rx)
+    });
+    rx.recv().await.expect("refresh pool stays open");
+    RefreshSlot(tx.clone())
+}
+
+pub fn resolve_root(path: &Path) -> Result<PathBuf, String> {
+    let root = text(git(path, &["rev-parse", "--show-toplevel"])?)?;
+    let root = PathBuf::from(root.trim_end_matches('\n'));
+    Ok(std::fs::canonicalize(&root).unwrap_or(root))
+}
+
 fn text(bytes: Vec<u8>) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| {
         "This repository contains non-UTF-8 paths or source that this POC cannot display.".into()
     })
 }
 
-pub fn load(path: &Path) -> Result<Snapshot, String> {
-    let root = text(git(path, &["rev-parse", "--show-toplevel"])?)?;
-    let root = PathBuf::from(root.trim_end_matches('\n'));
-    let branch = text(
-        git(&root, &["symbolic-ref", "--quiet", "--short", "HEAD"])
-            .or_else(|_| git(&root, &["rev-parse", "--short", "HEAD"]))?,
+fn branch_name(root: &Path) -> Result<String, String> {
+    let bytes = git(root, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .or_else(|_| git(root, &["rev-parse", "--short", "HEAD"]))?;
+    Ok(text(bytes)?.trim().into())
+}
+
+fn git_directories(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let output = text(git(root, &["rev-parse", "--git-dir", "--git-common-dir"])?)?;
+    let mut git_dirs = Vec::new();
+    for line in output.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let dir = PathBuf::from(line);
+        let dir = if dir.is_absolute() {
+            dir
+        } else {
+            root.join(dir)
+        };
+        let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
+        if !git_dirs.contains(&dir) {
+            git_dirs.push(dir);
+        }
+    }
+    Ok(git_dirs)
+}
+
+/// Tracked paths that also match an ignore rule. `git check-ignore` hides these,
+/// but editing one still changes the diff.
+pub(crate) fn tracked_ignored_paths(root: &Path) -> Result<HashSet<PathBuf>, String> {
+    let bytes = git(
+        root,
+        &["ls-files", "-z", "--cached", "-i", "--exclude-standard"],
     )?;
+    Ok(text(bytes)?
+        .split('\0')
+        .filter(|name| !name.is_empty())
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// Reads a worktree file, but stops once the bytes cannot be shown as text.
+/// A large untracked binary otherwise has to be loaded in full before the
+/// patch throws that content away.
+fn read_untracked(path: &Path) -> std::io::Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let mut content = Vec::new();
+    let mut buf = [0u8; 8192];
+    let mut checked = 0;
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if buf[..n].contains(&0) {
+            return Ok(vec![0]);
+        }
+        content.extend_from_slice(&buf[..n]);
+        match std::str::from_utf8(&content[checked..]) {
+            Ok(_) => checked = content.len(),
+            Err(error) if error.error_len().is_none() => checked += error.valid_up_to(),
+            Err(_) => return Ok(vec![0]),
+        }
+    }
+    if std::str::from_utf8(&content[checked..]).is_err() {
+        return Ok(vec![0]);
+    }
+    Ok(content)
+}
+
+pub(crate) struct RefreshSnapshot {
+    pub root: PathBuf,
+    pub branch: String,
+    pub git_dirs: Vec<PathBuf>,
+    pub staged: Option<GroupSnapshot>,
+    pub changes: Option<GroupSnapshot>,
+}
+
+pub fn load(path: &Path) -> Result<Snapshot, String> {
+    let snapshot = load_refresh(path, [None, None])?;
+    Ok(Snapshot {
+        root: snapshot.root,
+        branch: snapshot.branch,
+        git_dirs: snapshot.git_dirs,
+        staged: snapshot.staged.expect("initial staged snapshot"),
+        changes: snapshot.changes.expect("initial changes snapshot"),
+    })
+}
+
+pub(crate) fn load_refresh(
+    path: &Path,
+    previous: [Option<u64>; 2],
+) -> Result<RefreshSnapshot, String> {
+    let root = resolve_root(path)?;
     let diff_args = [
         "diff",
         "--no-color",
@@ -152,12 +335,30 @@ pub fn load(path: &Path) -> Result<Snapshot, String> {
     ];
     let mut cached_args = diff_args.to_vec();
     cached_args.extend(["--cached", "--"]);
-    let staged = GroupSnapshot::parse(text(git(&root, &cached_args)?)?)?;
     let mut working_args = diff_args.to_vec();
     working_args.push("--");
-    let mut patch = text(git(&root, &working_args)?)?;
-    let args = &["ls-files", "-z", "--others", "--exclude-standard"];
-    let names = text(git(&root, args)?)?;
+    let untracked_args = ["ls-files", "-z", "--others", "--exclude-standard"];
+    // These reads do not depend on each other. `--no-optional-locks` keeps them
+    // from taking the index lock, so they can run together.
+    let (branch, staged_patch, patch, names, git_dirs) = std::thread::scope(|scope| {
+        let branch = scope.spawn(|| branch_name(&root));
+        let staged = scope.spawn(|| git(&root, &cached_args).and_then(text));
+        let working = scope.spawn(|| git(&root, &working_args).and_then(text));
+        let names = scope.spawn(|| git(&root, &untracked_args).and_then(text));
+        let dirs = scope.spawn(|| git_directories(&root));
+        (
+            branch.join().expect("branch read panicked"),
+            staged.join().expect("staged diff panicked"),
+            working.join().expect("working diff panicked"),
+            names.join().expect("untracked list panicked"),
+            dirs.join().expect("git dir read panicked"),
+        )
+    });
+    let branch = branch?;
+    let staged_patch = staged_patch?;
+    let mut patch = patch?;
+    let names = names?;
+    let git_dirs = git_dirs?;
     for name in names
         .split('\0')
         .filter(|name| !name.is_empty())
@@ -178,29 +379,25 @@ pub fn load(path: &Path) -> Result<Snapshot, String> {
                 .as_bytes()
                 .to_vec()
         } else {
-            std::fs::read(&path).map_err(|e| format!("Couldn't read {name}: {e}"))?
+            read_untracked(&path).map_err(|e| format!("Couldn't read {name}: {e}"))?
         };
         patch.push_str(&addition_patch(name, &content, is_symlink));
     }
-    let mut git_dirs = Vec::new();
-    for arg in ["--git-dir", "--git-common-dir"] {
-        let dir = PathBuf::from(text(git(&root, &["rev-parse", arg])?)?.trim_end_matches('\n'));
-        let dir = if dir.is_absolute() {
-            dir
+    let changed = |patch: String, previous: Option<u64>| {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        patch.hash(&mut hash);
+        if previous == Some(hash.finish()) {
+            Ok(None)
         } else {
-            root.join(dir)
-        };
-        let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
-        if !git_dirs.contains(&dir) {
-            git_dirs.push(dir);
+            GroupSnapshot::parse(patch).map(Some)
         }
-    }
-    Ok(Snapshot {
+    };
+    Ok(RefreshSnapshot {
         root,
-        branch: branch.trim().into(),
+        branch,
         git_dirs,
-        staged,
-        changes: GroupSnapshot::parse(patch)?,
+        staged: changed(staged_patch, previous[0])?,
+        changes: changed(patch, previous[1])?,
     })
 }
 
@@ -571,5 +768,88 @@ mod tests {
         assert_eq!(snapshot.staged.files.len(), 1);
         assert_eq!(snapshot.staged.files[0].path().as_str(), "copy.rs");
         assert_eq!(snapshot.changes.files[0].path().as_str(), "source.rs");
+    }
+
+    #[test]
+    fn long_untracked_text_keeps_characters_split_across_reads() {
+        let repo = TestRepository::new();
+        let mut body = vec![b'a'; 8191];
+        body.extend("é\n".as_bytes());
+        std::fs::write(repo.0.join("long.rs"), &body).unwrap();
+        let snapshot = load(&repo.0).unwrap();
+        let patch = &snapshot.changes.patch;
+        assert!(patch.contains("é"));
+        assert!(patch.contains(&"a".repeat(8191)));
+        assert!(!snapshot.changes.files[0].is_binary());
+    }
+
+    #[test]
+    fn untracked_binary_stops_being_text_at_the_first_nul() {
+        let repo = TestRepository::new();
+        let mut body = vec![b'a'; 9000];
+        body[10] = 0;
+        std::fs::write(repo.0.join("blob.bin"), &body).unwrap();
+        let snapshot = load(&repo.0).unwrap();
+        assert!(snapshot.changes.files[0].is_binary());
+        assert!(!snapshot.changes.patch.contains(&"a".repeat(20)));
+    }
+    #[test]
+    fn unchanged_refresh_returns_metadata_without_reparsing_groups() {
+        let repo = TestRepository::new();
+        let root = &repo.0;
+        std::fs::write(root.join("new.txt"), "first\n").unwrap();
+        let initial = load(root).unwrap();
+        let hashes = [
+            Some(initial.staged.fingerprint),
+            Some(initial.changes.fingerprint),
+        ];
+        let unchanged = load_refresh(root, hashes).unwrap();
+        assert!(unchanged.staged.is_none() && unchanged.changes.is_none());
+        std::fs::write(root.join("new.txt"), "second\n").unwrap();
+        let changed = load_refresh(root, hashes).unwrap();
+        assert!(changed.staged.is_none() && changed.changes.is_some());
+    }
+    #[test]
+    fn ignored_batches_larger_than_pipe_capacity_complete() {
+        let repo = TestRepository::new();
+        repo.write(".gitignore", "ignored/\n");
+        let paths = (0..4096)
+            .map(|ix| PathBuf::from(format!("ignored/{}/{ix}.txt", "long".repeat(30))))
+            .collect::<Vec<_>>();
+        assert_eq!(ignored_paths(&repo.0, &paths).unwrap().len(), paths.len());
+    }
+
+    #[test]
+    #[ignore = "manual refresh performance comparison"]
+    fn refresh_performance_comparison() {
+        let repo = TestRepository::new();
+        let large = (0..50_000)
+            .map(|n| format!("source line {n} with representative text and context\n"))
+            .collect::<String>();
+        repo.write("large.txt", &large);
+        for n in 0..1000 {
+            repo.write(&format!("files/{n:04}.txt"), "small new file\n");
+        }
+        let initial = load(&repo.0).unwrap();
+        let hashes = [
+            Some(initial.staged.fingerprint),
+            Some(initial.changes.fingerprint),
+        ];
+        let mut full = Vec::new();
+        let mut unchanged = Vec::new();
+        for _ in 0..9 {
+            let start = std::time::Instant::now();
+            drop(load(&repo.0).unwrap());
+            full.push(start.elapsed().as_secs_f64() * 1000.);
+            let start = std::time::Instant::now();
+            drop(load_refresh(&repo.0, hashes).unwrap());
+            unchanged.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        full.sort_by(f64::total_cmp);
+        unchanged.sort_by(f64::total_cmp);
+        println!(
+            "50k source lines + 1000 files: full parse p50={:.1}ms p90={:.1}ms; unchanged refresh p50={:.1}ms p90={:.1}ms",
+            full[4], full[8], unchanged[4], unchanged[8]
+        );
     }
 }
