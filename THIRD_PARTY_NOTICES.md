@@ -18,7 +18,12 @@ Commit Mono 1.143 Regular (400) and Medium (500), designed by Eigil Nikolajsen, 
 
 The `_docs/commit-mono-main` reference copy is not bundled; the two font files and their license are copied into `assets/fonts` and embedded in the executable.
 
-Diffy vendors GPUI Component 0.7.3 with narrowly documented scroll-range, live reading-position, full-width addition, and split-width changes. The Apache-2.0 license is retained at `vendor/gpui-component/LICENSE-APACHE`; changes are described in [vendor/README.md](vendor/README.md).
+Diffy vendors GPUI Component 0.7.3 with narrowly documented scroll-range, live reading-position, full-width addition, split-width, and scrollbar change-marker changes. The Apache-2.0 license is retained at `vendor/gpui-component/LICENSE-APACHE`; changes are described in [vendor/README.md](vendor/README.md).
+
+Diffy uses nucleo-matcher 0.3.1 (MPL-2.0) to filter the changed-file list. The license text ships with the packaged dependency inventory.
+
+- nucleo-matcher: https://github.com/helix-editor/nucleo
+- Mozilla Public License 2.0: https://www.mozilla.org/en-US/MPL/2.0/
 
 Diffy uses cargo-packager (MIT/Apache-2.0) for packaging and cargo-packager-updater (MIT/Apache-2.0) for signed updates. The updater is pinned to revision `0a3ea3a089363b7e77dfca238be5bbcf3f4d75f6` for HTTPS enforcement.
 

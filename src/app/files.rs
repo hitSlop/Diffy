@@ -1,16 +1,28 @@
 use super::Diffy;
+use super::review::FILE_INDENT;
+use super::review::FILE_ROW_HEIGHT;
+use super::review::FOLDER_HEADER_HEIGHT;
+use super::review::SidebarRow;
 use crate::repository::ChangeGroup;
 use gpui_kit::AnyElement;
+use gpui_kit::AppContext as _;
 use gpui_kit::Context;
+use gpui_kit::DispatchPhase;
+use gpui_kit::Entity;
 use gpui_kit::InteractiveElement as _;
 use gpui_kit::IntoElement;
+use gpui_kit::ModifiersChangedEvent;
 use gpui_kit::MouseButton;
 use gpui_kit::ParentElement as _;
+use gpui_kit::ScrollDelta;
+use gpui_kit::ScrollWheelEvent;
 use gpui_kit::SharedString;
 use gpui_kit::StatefulInteractiveElement as _;
 use gpui_kit::Styled as _;
+use gpui_kit::TouchPhase;
 use gpui_kit::Window;
 use gpui_kit::base::TestSupportExt as _;
+use gpui_kit::canvas;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::Disableable as _;
 use gpui_kit::component::Icon;
@@ -22,6 +34,9 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::diff::DiffFileStatus;
 use gpui_kit::component::h_flex;
+use gpui_kit::component::input::Input;
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::input::InputState;
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::tooltip::Tooltip;
@@ -33,15 +48,61 @@ use gpui_kit::px;
 use gpui_kit::rgb;
 use std::time::Duration;
 
+/// Pixels of trackpad travel that move one file.
+const FILE_SCROLL_STEP: f32 = 40.;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum FileScrollAxis {
+    Vertical,
+    Horizontal,
+}
+
 impl Diffy {
-    pub(super) fn render_files(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn ensure_file_search(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<InputState>> {
+        let project = self.projects.get(self.active)?;
+        if let Some(search) = project.view().search.clone() {
+            return Some(search);
+        }
+        let project_id = project.id;
+        let group = project.group.index();
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find file"));
+        self.projects[self.active].view_mut().search = Some(search.clone());
+        let subscription = cx.subscribe(&search, move |this, input, event, cx| {
+            if !matches!(event, InputEvent::Change) {
+                return;
+            }
+            let query = input.read(cx).value().to_string();
+            let Some(project) = this.projects.iter_mut().find(|p| p.id == project_id) else {
+                return;
+            };
+            project.views[group].set_query(query, cx);
+        });
+        self.projects[self.active].subscriptions.push(subscription);
+        Some(search)
+    }
+
+    pub(super) fn render_files(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(search) = self.ensure_file_search(window, cx) else {
+            return div().size_full().bg(rgb(0)).into_any_element();
+        };
         let Some(p) = self.projects.get(self.active) else {
             return div().size_full().bg(rgb(0)).into_any_element();
         };
         let view = p.view();
         let files = view.files.clone();
         let rows = view.rows.clone();
+        let sidebar = view.sidebar.clone();
         let selected = view.selected.clone();
+        let show_empty = !view.query.trim().is_empty() && sidebar.is_empty() && !files.is_empty();
+        let empty_color = cx.theme().muted_foreground;
         let owner = cx.entity().downgrade();
         let project_id = p.id;
         let group = p.group;
@@ -79,6 +140,14 @@ impl Diffy {
                     ),
             )
             .child(
+                div().flex_none().px_2().pb_2().child(
+                    Input::new(&search)
+                        .id("file-search")
+                        .small()
+                        .w_full(),
+                ),
+            )
+            .child(
                 div()
                     .id("file-list")
                     .relative()
@@ -91,15 +160,81 @@ impl Diffy {
                     .child(
                         v_virtual_list(cx.entity(), "files", view.row_sizes.clone(), move |_, range, _, cx| {
                             range
-                                .map(|ix| {
-                                    let f = &files[ix];
-                                    let row = &rows[ix];
+                                .map(|ix| match &sidebar[ix] {
+                                    SidebarRow::Folder(header) => {
+                                        let ancestor = header.ancestor.clone();
+                                        let leaf = header.leaf.clone();
+                                        let label = header.label.clone();
+                                        let count = header.count.to_string();
+                                        let leading = header.leading;
+                                        let muted = cx.theme().muted_foreground;
+                                        let foreground = cx.theme().foreground;
+                                        div()
+                                            .w_full()
+                                            .h(px(leading + FOLDER_HEADER_HEIGHT))
+                                            .pt(px(leading))
+                                            .child(
+                                                h_flex()
+                                                    .id(SharedString::from(format!("folder:{label}")))
+                                                    .test_support()
+                                                    .w_full()
+                                                    .h(px(FOLDER_HEADER_HEIGHT))
+                                                    .px_2()
+                                                    .gap_2()
+                                                    .items_center()
+                                                    .text_size(px(12.))
+                                                    .child(
+                                                        h_flex()
+                                                            .flex_1()
+                                                            .min_w_0()
+                                                            .overflow_hidden()
+                                                            .children(ancestor.map(|dir| {
+                                                                div()
+                                                                    .min_w_0()
+                                                                    .truncate()
+                                                                    .text_ellipsis_middle()
+                                                                    .text_color(muted)
+                                                                    .child(dir)
+                                                            }))
+                                                            .when(header.ancestor.is_some(), |row| {
+                                                                row.child(
+                                                                    div()
+                                                                        .flex_shrink_0()
+                                                                        .text_color(muted)
+                                                                        .child(" · "),
+                                                                )
+                                                            })
+                                                            .child(
+                                                                div()
+                                                                    .flex_shrink_0()
+                                                                    .max_w_full()
+                                                                    .truncate()
+                                                                    .text_ellipsis_middle()
+                                                                    .font_medium()
+                                                                    .text_color(foreground)
+                                                                    .child(leaf),
+                                                            ),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .flex_shrink_0()
+                                                            .text_color(muted)
+                                                            .child(count),
+                                                    )
+                                                    .child(div().w(px(20.)).flex_shrink_0()),
+                                            )
+                                            .into_any_element()
+                                    }
+                                    SidebarRow::File { index, indent } => {
+                                    let index = *index;
+                                    let indent = *indent;
+                                    let f = &files[index];
+                                    let row = &rows[index];
                                     let path = f.path().clone();
                                     let owner = owner.clone();
                                     let action_owner = owner.clone();
                                     let action_path = path.clone();
                                     let tooltip_path = path.clone();
-                                    let directory = row.directory.clone();
                                     let filename = row.filename.clone();
                                     let row_group = row.group.clone();
                                     let action_label = if group == ChangeGroup::Changes {
@@ -115,10 +250,14 @@ impl Diffy {
                                         DiffFileStatus::Copied => ("C", cx.theme().primary),
                                         _ => ("M", cx.theme().muted_foreground),
                                     };
-                                    div().w_full().h(px(30. + row.gap)).pt(px(row.gap)).child(
+                                    div()
+                                        .w_full()
+                                        .h(px(FILE_ROW_HEIGHT))
+                                        .pl(px(if indent { FILE_INDENT } else { 0. }))
+                                        .child(
                                     ListItem::new(path.clone())
                                         .group(row_group.clone())
-                                        .h(px(30.))
+                                        .h(px(FILE_ROW_HEIGHT))
                                         .px_2()
                                         .w_full()
                                         .min_w_0()
@@ -137,30 +276,19 @@ impl Diffy {
                                                         .text_color(cx.theme().muted_foreground),
                                                 )
                                                 .child(
-                                                    h_flex()
+                                                    div()
+                                                        .id(("file-name", index))
+                                                        .test_support()
                                                         .flex_1()
                                                         .min_w_0()
-                                                        .overflow_hidden()
+                                                        .truncate()
+                                                        .text_ellipsis_middle()
+                                                        .font_medium()
                                                         .text_size(px(13.))
-                                                        .children(directory.map(|dir| div()
-                                                            .id(("file-directory", ix))
-                                                            .min_w_0()
-                                                            .truncate()
-                                                            .text_ellipsis_middle()
-                                                            .text_color(cx.theme().muted_foreground)
-                                                            .child(dir)))
-                                                        .child(div()
-                                                            .id(("file-name", ix))
-                                                            .test_support()
-                                                            .flex_shrink_0()
-                                                            .max_w_full()
-                                                            .truncate()
-                                                            .text_ellipsis_middle()
-                                                            .font_medium()
-                                                            .text_color(cx.theme().foreground)
-                                                            .role(gpui_kit::accesskit::Role::Label)
-                                                            .aria_label(filename.clone())
-                                                            .child(filename)),
+                                                        .text_color(cx.theme().foreground)
+                                                        .role(gpui_kit::accesskit::Role::Label)
+                                                        .aria_label(filename.clone())
+                                                        .child(filename),
                                                 )
                                                 .child(
                                                     div()
@@ -169,7 +297,7 @@ impl Diffy {
                                                         .child(status),
                                                 )
                                                 .child(
-                                                    Button::new(("file-action", ix))
+                                                    Button::new(("file-action", index))
                                                         .ghost()
                                                         .xsmall()
                                                         .icon(if group == ChangeGroup::Changes {
@@ -215,12 +343,26 @@ impl Diffy {
                                             });
                                         }))
                                         .into_any_element()
+                                    }
                                 })
                                 .collect()
                         })
                         .size_full()
                         .track_scroll(&view.scroll),
                     )
+                    .when(show_empty, |list| {
+                        list.child(
+                            div()
+                                .id("file-search-empty")
+                                .test_support()
+                                .absolute()
+                                .top(px(8.))
+                                .left(px(8.))
+                                .text_size(px(12.))
+                                .text_color(empty_color)
+                                .child("No matching files"),
+                        )
+                    })
                     .vertical_scrollbar(&view.scroll),
             )
             .child(
@@ -244,6 +386,23 @@ impl Diffy {
             )
             .into_any_element()
     }
+    pub(super) fn focus_file_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings.is_some() || self.palette_open || self.import.picker.is_some() {
+            return;
+        }
+        self.stop_file_repeat();
+        let Some(search) = self
+            .projects
+            .get(self.active)
+            .and_then(|project| project.view().search.clone())
+        else {
+            return;
+        };
+        search.update(cx, |input, cx| {
+            input.focus(window, cx);
+            input.select_all(window, cx);
+        });
+    }
     pub(super) fn select_file(
         &mut self,
         path: SharedString,
@@ -260,26 +419,15 @@ impl Diffy {
         cx.notify();
     }
     pub(super) fn move_file(&mut self, direction: isize, cx: &mut Context<Self>) {
-        let Some(p) = self.projects.get_mut(self.active) else {
+        let Some(ix) = self
+            .projects
+            .get(self.active)
+            .and_then(|project| project.view().step_visible(direction))
+        else {
             return;
         };
-        let view = p.view_mut();
-        if view.files.is_empty() {
-            return;
-        }
-        let current = view
-            .selected
-            .as_ref()
-            .and_then(|path| view.indices.get(path))
-            .copied()
-            .unwrap_or(0);
-        let ix = current
-            .saturating_add_signed(direction)
-            .min(view.files.len() - 1);
-        if ix == current {
-            return;
-        }
-        view.select(view.files[ix].path().clone(), cx);
+        let path = self.projects[self.active].view().files[ix].path().clone();
+        self.projects[self.active].view_mut().select(path, cx);
         self.persist_navigation(cx);
         cx.notify();
     }
@@ -339,6 +487,110 @@ impl Diffy {
     pub(super) fn stop_file_repeat(&mut self) {
         self.repeat_direction = None;
         self.file_repeat = None;
+    }
+    /// Capture runs before the diff list applies the wheel, so stopping the
+    /// event here keeps Command+scroll on the file list.
+    pub(super) fn file_scroll_layer(&self, cx: &mut Context<Self>) -> AnyElement {
+        let view = cx.entity().clone();
+        canvas(
+            |_, _, _| (),
+            move |_, _, window, _| {
+                let view = view.clone();
+                window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
+                    if phase != DispatchPhase::Capture {
+                        return;
+                    }
+                    let consumed =
+                        view.update(cx, |this, cx| this.scroll_files_with_wheel(event, cx));
+                    if consumed {
+                        cx.stop_propagation();
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_full()
+        .into_any_element()
+    }
+    pub(super) fn reset_file_scroll_unless_command(&mut self, event: &ModifiersChangedEvent) {
+        if !event.modifiers.secondary() || event.modifiers.shift || event.modifiers.alt {
+            self.reset_file_scroll();
+        }
+    }
+    fn reset_file_scroll(&mut self) {
+        self.file_scroll_remainder = 0.;
+        self.file_scroll_axis = None;
+    }
+    /// Command plus a vertical wheel steps files. A horizontal gesture is left
+    /// for the diff to pan. Returns whether this event was consumed.
+    fn scroll_files_with_wheel(
+        &mut self,
+        event: &ScrollWheelEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let mods = event.modifiers;
+        if !mods.secondary() || mods.shift || mods.alt {
+            self.reset_file_scroll();
+            return false;
+        }
+        if self.palette_open || self.settings.is_some() || self.import.picker.is_some() {
+            self.reset_file_scroll();
+            return false;
+        }
+        if event.touch_phase == TouchPhase::Started {
+            self.reset_file_scroll();
+        } else if !event.delta.precise() {
+            self.file_scroll_axis = None;
+        }
+        let (dx, dy) = match event.delta {
+            ScrollDelta::Pixels(delta) => (f32::from(delta.x), f32::from(delta.y)),
+            ScrollDelta::Lines(delta) => (delta.x, delta.y),
+        };
+        let vertical = match self.file_scroll_axis {
+            Some(FileScrollAxis::Vertical) => true,
+            Some(FileScrollAxis::Horizontal) => false,
+            None => dy.abs() >= dx.abs() && (dx != 0. || dy != 0.),
+        };
+        if !vertical {
+            if dx.abs() > dy.abs() {
+                self.file_scroll_axis = Some(FileScrollAxis::Horizontal);
+            }
+            return false;
+        }
+        self.file_scroll_axis = Some(FileScrollAxis::Vertical);
+        match event.delta {
+            ScrollDelta::Lines(_) => self.step_files_by_lines(dy, cx),
+            ScrollDelta::Pixels(_) => self.step_files_by_pixels(dy, cx),
+        }
+        true
+    }
+    fn step_files_by_lines(&mut self, dy: f32, cx: &mut Context<Self>) {
+        self.file_scroll_remainder = 0.;
+        let steps = dy.round() as isize;
+        if steps == 0 {
+            return;
+        }
+        let direction = if steps < 0 { 1 } else { -1 };
+        for _ in 0..steps.unsigned_abs() {
+            self.move_file(direction, cx);
+        }
+    }
+    fn step_files_by_pixels(&mut self, dy: f32, cx: &mut Context<Self>) {
+        if dy != 0.
+            && self.file_scroll_remainder != 0.
+            && dy.signum() != self.file_scroll_remainder.signum()
+        {
+            self.file_scroll_remainder = 0.;
+        }
+        self.file_scroll_remainder += dy;
+        while self.file_scroll_remainder <= -FILE_SCROLL_STEP {
+            self.file_scroll_remainder += FILE_SCROLL_STEP;
+            self.move_file(1, cx);
+        }
+        while self.file_scroll_remainder >= FILE_SCROLL_STEP {
+            self.file_scroll_remainder -= FILE_SCROLL_STEP;
+            self.move_file(-1, cx);
+        }
     }
     #[cfg(feature = "ui-tests")]
     pub fn set_file_key_probe(&mut self, probe: fn(isize) -> bool) {

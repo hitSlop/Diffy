@@ -1,5 +1,8 @@
 use diffy::app;
 
+#[path = "ui/scrollbar.rs"]
+mod scrollbar;
+
 use gpui_kit::{
     AppContext as _, Bounds, Focusable as _, HeadlessAppContext, WindowBounds, WindowOptions,
     assets::Assets, px, size, test::TestWindowExt as _,
@@ -21,6 +24,7 @@ fn main() {
         gpui_kit::init(cx);
         app::init(cx);
     });
+    scrollbar::run(&mut cx);
     let (handle, view) = cx
         .update(|cx| {
             gpui_kit::open_window(
@@ -67,6 +71,133 @@ fn main() {
         "Split button must change rendered layout"
     );
     split.save("target/previews/diffy-split.png").unwrap();
+
+    // Command plus a vertical wheel steps files. A plain wheel leaves the selection.
+    cx.update_window(handle, |_, w, cx| {
+        use gpui_kit::{Modifiers, ScrollDelta, TouchPhase, point, px};
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs")
+        );
+        let scroll = |w: &mut gpui_kit::Window,
+                      delta: ScrollDelta,
+                      modifiers: Modifiers,
+                      phase: TouchPhase,
+                      cx: &mut gpui_kit::App| {
+            use gpui_kit::InputEvent as _;
+            w.render_frame(cx);
+            let position = w.find("diff-body").bounds().center();
+            w.dispatch_event(
+                gpui_kit::ScrollWheelEvent {
+                    position,
+                    delta,
+                    modifiers,
+                    touch_phase: phase,
+                }
+                .to_platform_input(),
+                cx,
+            );
+            w.render_frame(cx);
+        };
+        let cmd = Modifiers::command();
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-39.))),
+            cmd,
+            TouchPhase::Started,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "Less than 40px of trackpad travel stays on the file"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-2.))),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/duration.rs"),
+            "Crossing 40px selects the next file"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(41.))),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "Scrolling up selects the previous file"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(80.), px(0.))),
+            cmd,
+            TouchPhase::Started,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "A horizontal Command swipe still pans the diff"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-80.))),
+            Modifiers::none(),
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "Scrolling without Command leaves the file selected"
+        );
+        scroll(
+            w,
+            ScrollDelta::Lines(point(0., -1.)),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/duration.rs"),
+            "One mouse-wheel notch with Command moves one file"
+        );
+        w.press("cmd-p", cx);
+        w.render_frame(cx);
+        assert!(view.read(cx).palette_is_open());
+        scroll(
+            w,
+            ScrollDelta::Lines(point(0., -1.)),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/duration.rs"),
+            "Command scroll does not change files while the palette is open"
+        );
+        w.press("escape", cx);
+        w.render_frame(cx);
+        assert!(!view.read(cx).palette_is_open());
+        w.press("cmd-up", cx);
+        w.render_frame(cx);
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs")
+        );
+    })
+    .unwrap();
 
     // Quick taps never throttle, and holding repeats even without native repeat/key-up events.
     cx.update_window(handle, |_, w, cx| {
@@ -1234,7 +1365,7 @@ fn main() {
         .unwrap()
         .save("target/previews/diffy-file-paths.png")
         .unwrap();
-    // Full paths align, and only directory transitions add space.
+    // Full paths align. A folder header separates one directory group from the next.
     let alignment_paths = [
         "README.md",
         "packaging/Info.plist",
@@ -1265,22 +1396,70 @@ fn main() {
     }
     cx.update_window(large_handle, |_, w, cx| {
         w.render_frame(cx);
-        let left = w.find("README.md").bounds().origin.x;
-        for path in alignment_paths {
+        let root = w.find("README.md").bounds().origin.x;
+        assert_eq!(
+            w.find("new.txt").bounds().origin.x,
+            root,
+            "root files share a left edge"
+        );
+        let nested = w.find("src/cli.rs").bounds().origin.x;
+        assert_eq!(nested - root, px(12.), "nested files indent by one step");
+        for path in [
+            "packaging/Info.plist",
+            "src/app/files.rs",
+            "src/app/mod.rs",
+            "src/cli.rs",
+            "tests/ui.rs",
+        ] {
             assert_eq!(
                 w.find(path).bounds().origin.x,
-                left,
-                "{path} aligns with root files"
+                nested,
+                "{path} aligns with nested files"
             );
         }
+        assert!(w.try_find("folder:src · app").is_some());
+        assert!(w.try_find("folder:src").is_some());
         let packaging = w.find("packaging/Info.plist").bounds();
         let first = w.find("src/app/files.rs").bounds();
         let second = w.find("src/app/mod.rs").bounds();
         let cli = w.find("src/cli.rs").bounds();
-        assert_eq!(first.origin.y - packaging.origin.y, px(34.));
+        assert_eq!(first.origin.y - packaging.origin.y, px(58.));
         assert_eq!(second.origin.y - first.origin.y, px(30.));
-        assert_eq!(cli.origin.y - second.origin.y, px(34.));
+        assert_eq!(cli.origin.y - second.origin.y, px(58.));
         assert_eq!(first.size.height, px(30.));
+        w.press("cmd-f", cx);
+        w.input("cli.rs", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(large_handle, |_, w, cx| {
+        w.render_frame(cx);
+        assert!(w.try_find("README.md").is_none());
+        assert!(w.try_find("src/app/files.rs").is_none());
+        assert!(w.try_find("folder:src · app").is_none());
+        assert!(w.try_find("src/cli.rs").is_some());
+        assert!(w.try_find("folder:src").is_some());
+        assert_ne!(w.find("stage-all").disabled(), Some(true));
+        w.press("cmd-a", cx);
+        w.input("zzzz-no-such-file", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(large_handle, |_, w, cx| {
+        w.render_frame(cx);
+        assert!(w.try_find("src/cli.rs").is_none());
+        assert!(w.try_find("file-search-empty").is_some());
+        assert_ne!(w.find("stage-all").disabled(), Some(true));
+        w.press("cmd-a", cx);
+        w.press("backspace", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(large_handle, |_, w, cx| {
+        w.render_frame(cx);
+        assert!(w.try_find("README.md").is_some());
+        assert!(w.try_find("src/app/files.rs").is_some());
+        assert!(w.try_find("file-search-empty").is_none());
     })
     .unwrap();
     // External open requests select/add a project while preserving live badges on inactive ones.

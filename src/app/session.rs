@@ -140,6 +140,8 @@ impl Diffy {
             repeat_direction: None,
             file_repeat: None,
             file_key_probe: keyboard::file_shortcut_pressed,
+            file_scroll_remainder: 0.,
+            file_scroll_axis: None,
             navigation_save: None,
             persisted_state: None,
             updates: updates::Controller::default(),

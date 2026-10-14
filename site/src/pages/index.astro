@@ -1,0 +1,64 @@
+---
+import Page from '../layouts/Page.astro';
+import Mascot from '../components/Mascot.astro';
+const checkout = import.meta.env.DODO_CHECKOUT_URL?.trim();
+let purchaseUrl;
+if (checkout) {
+  const url = new URL(checkout);
+  if (url.protocol !== 'https:' || url.hostname !== 'checkout.dodopayments.com') {
+    throw new Error('DODO_CHECKOUT_URL must be an HTTPS Dodo hosted checkout URL.');
+  }
+  url.searchParams.set('redirect_url', 'https://diffy.hitslop.com/thanks');
+  purchaseUrl = url.href;
+}
+---
+<Page>
+  <main id="main">
+    <section class="hero frame" aria-labelledby="hero-title">
+      <div class="character-row">
+        <Mascot />
+        <div class="speech"><h1 id="hero-title">i literally only<br class="desktop-break" /> show you diffs</h1></div>
+      </div>
+      <p class="intro">A native Git diff viewer, built in Rust.</p>
+      <p class="agent-line">Keep up with your agents’ changes.</p>
+      <p class="compatibility">Apple Silicon <span aria-hidden="true">·</span> macOS 13+ <span aria-hidden="true">·</span> Requires Git</p>
+      <div class="purchase">
+        {purchaseUrl ? <a class="button" href={purchaseUrl}>Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></a> : <button class="button" disabled aria-describedby="checkout-note">Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></button>}
+        {!purchaseUrl && <p id="checkout-note" class="checkout-note">Checkout coming soon.</p>}
+        <a class="build-link" href="https://github.com/hitSlop/Diffy">Or build for free <span aria-hidden="true">↗</span></a>
+        <p class="support-note">Your purchase supports Diffy.</p>
+      </div>
+    </section>
+    <figure class="screenshot frame">
+      <a href="/diffy.webp" target="_blank" rel="noopener" aria-label="Open the full-resolution Diffy screenshot in a new tab">
+        <img src="/diffy.webp" width="2880" height="1738" alt="Diffy in split view: original and changed code, project icons with change-count badges on the left, a searchable file list grouped by directory on the right, and keyboard shortcuts along the bottom." decoding="async" />
+      </a>
+      <figcaption>Real app. Real diffs. <span>Click to take a closer look ↗</span></figcaption>
+    </figure>
+    <section class="features frame" aria-labelledby="features-title">
+      <h2 id="features-title">A few things it does.</h2>
+      <dl>
+        <div class="feature-row">
+          <dt>Stay on the keyboard.</dt>
+          <dd>
+            <p>Jump between files and projects. Find a command without hunting for a button.</p>
+            <div class="shortcuts"><span><kbd>⌘P</kbd> Commands</span><span><kbd>⌘↑</kbd><kbd>⌘↓</kbd> Files</span><span><kbd>⇧⌘↑</kbd><kbd>⇧⌘↓</kbd> Projects</span></div>
+            <p class="terminal-note">Install the terminal command, then start with <code>diffy .</code></p>
+          </dd>
+        </div>
+        <div class="feature-row">
+          <dt>Find your agent projects.</dt>
+          <dd><p>Import local Git projects from Codex and Claude Code. Pick the ones you want, and optionally add new projects automatically.</p></dd>
+        </div>
+        <div class="feature-row">
+          <dt>Bring your Herdr along.</dt>
+          <dd><p>Your local Herdr workspaces are ready to import, including saved sessions. Less adding folders. More reading diffs.</p></dd>
+        </div>
+        <div class="feature-row">
+          <dt>See changes as they happen.</dt>
+          <dd><p>Live refresh keeps the diff current. Staged and unstaged changes stay separate. Stage a file, or all of them, when you’re ready.</p></dd>
+        </div>
+      </dl>
+    </section>
+  </main>
+</Page>

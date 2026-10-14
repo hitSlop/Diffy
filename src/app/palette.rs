@@ -2,6 +2,7 @@ use super::About;
 use super::CheckForUpdates;
 use super::Diffy;
 use super::FocusDiff;
+use super::FocusFileSearch;
 use super::ImportProjects;
 use super::InstallCli;
 use super::InstallUpdate;
@@ -162,6 +163,7 @@ impl Diffy {
                 !mutable,
             ),
             item("Focus diff", Box::new(FocusDiff), !has_files),
+            item("Find file", Box::new(FocusFileSearch), p.is_none()),
             item(
                 "Remove from Diffy",
                 Box::new(RemoveCurrentProject),

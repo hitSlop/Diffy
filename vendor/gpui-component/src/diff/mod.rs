@@ -1,4 +1,5 @@
-// Differ modifications: restore scroll estimates and support asymmetric split widths.
+// Differ modifications: restore scroll estimates, support asymmetric split widths,
+// and paint change marks in the scrollbar track.
 //! Readonly, virtualized patch display inspired by Diffs from Pierre.
 //! Parse an externally supplied patch into [`DiffFile`]s, retain one
 //! [`DiffState`] for all of them in the owner, and build [`Diff`] during rendering.
@@ -20,13 +21,13 @@ pub use state::{DiffEvent, DiffState};
 use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Axis, ClickEvent, ClipboardItem, Context, ElementId, Entity, Focusable as _,
-    HighlightStyle, Hsla, InteractiveElement as _, IntoElement, KeyBinding, ListOffset,
-    MouseButton, ParentElement as _, Pixels, RenderOnce, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, TextRun, Window, div, list, point,
-    prelude::FluentBuilder as _, px,
+    AnyElement, App, Axis, Bounds, ClickEvent, ClipboardItem, ContentMask, Context, ElementId,
+    Entity, Focusable as _, HighlightStyle, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
+    ListOffset, MouseButton, ParentElement as _, Pixels, RenderOnce, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, TextRun, Window, div, fill, list,
+    point, prelude::FluentBuilder as _, px, size,
 };
-use gpui_base::TestSupportExt as _;
+use gpui_base::{ScrollbarHandle, TestSupportExt as _};
 use rust_i18n::t;
 
 use crate::{
@@ -41,7 +42,7 @@ use actions::*;
 use conflict::ConflictPart;
 use presentation::FilePresentation;
 use selection::{CodeText, SelectionLayer};
-use state::{DisplayRow, FoldExpansion, LayoutKey, SelectedLines};
+use state::{ChangeKind, ChangeMark, DisplayRow, FoldExpansion, LayoutKey, SelectedLines};
 
 // Private: bindings serve the focused code body only.
 mod actions {
@@ -543,6 +544,8 @@ fn render_diff(
         state: cx.entity(),
     });
     let rows = state.rows().clone();
+    let marks = state.change_marks().clone();
+    let row_count = rows.len();
     let scrollbar = state.list().clone();
     let horizontal = state.horizontal_scroll().clone();
     let has_rows = !rows.is_empty();
@@ -710,9 +713,28 @@ fn render_diff(
                         });
                     }
                 },
-                |_, _, _, _| {},
+                move |bounds, _, window, cx| {
+                    // Read after list prepaint and height-hint restoration. Render-time
+                    // dimensions can be zero or belong to the previous file/width.
+                    let viewport = scrollbar.viewport_bounds();
+                    if scrollbar.content_size().height > viewport.size.height {
+                        paint_change_marks(
+                            &marks,
+                            row_count,
+                            // The list can be wider than the pane, or still have
+                            // a zero width on its first layout. The track belongs
+                            // to the body, independent of the code's width.
+                            bounds,
+                            cx.theme().danger,
+                            cx.theme().success,
+                            window,
+                        );
+                    }
+                },
             )
             .absolute()
+            .top_0()
+            .left_0()
             .size_full(),
         )
         .test_support()
@@ -733,6 +755,69 @@ fn render_diff(
         .child(body)
         .refine_style(&props.style)
         .into_any_element()
+}
+
+/// Leave a pixel between the right-edge strip and the expanded thumb (4px inset).
+const MARK_GUTTER_WIDTH: Pixels = px(3.);
+/// A one-line change stays visible when the patch is long.
+const MARK_MIN_HEIGHT: Pixels = px(2.);
+
+/// A single change strip in the right scrollbar gutter.
+///
+/// Deleted lines are red, added lines green, and split edits stack both colors.
+fn paint_change_marks(
+    marks: &[ChangeMark],
+    row_count: usize,
+    bounds: Bounds<Pixels>,
+    removed: Hsla,
+    added: Hsla,
+    window: &mut Window,
+) {
+    let track_h = bounds.size.height;
+    if row_count == 0
+        || marks.is_empty()
+        || track_h <= px(0.)
+        || bounds.size.width < Scrollbar::width()
+    {
+        return;
+    }
+    let count = row_count as f32;
+    // Canvas painting adds no hitboxes, so the scrollbar retains its entire track.
+    window.with_content_mask(Some(ContentMask { bounds }), |window| {
+        for mark in marks {
+            let mut height = track_h * ((mark.end - mark.start) as f32 / count);
+            let min_height = if mark.kind == ChangeKind::Edited {
+                MARK_MIN_HEIGHT * 2.
+            } else {
+                MARK_MIN_HEIGHT
+            };
+            height = height.max(min_height);
+            if height > track_h {
+                height = track_h;
+            }
+            let mut y = track_h * (mark.start as f32 / count);
+            if y + height > track_h {
+                y = track_h - height;
+            }
+            let mut band = |y: Pixels, height: Pixels, color: Hsla| {
+                window.paint_quad(fill(
+                    Bounds::new(
+                        point(bounds.right() - MARK_GUTTER_WIDTH, bounds.top() + y),
+                        size(MARK_GUTTER_WIDTH, height),
+                    ),
+                    color,
+                ));
+            };
+            match mark.kind {
+                ChangeKind::Added => band(y, height, added),
+                ChangeKind::Removed => band(y, height, removed),
+                ChangeKind::Edited => {
+                    band(y, height / 2., removed);
+                    band(y + height / 2., height / 2., added);
+                }
+            }
+        }
+    });
 }
 
 fn body_focused(state: &DiffState, window: &Window, cx: &mut Context<DiffState>) -> bool {

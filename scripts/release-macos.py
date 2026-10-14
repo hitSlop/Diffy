@@ -130,7 +130,7 @@ def main():
     # BSD tar's AppleDouble metadata is incompatible with the updater's single app root.
     archive_env = {**env, "COPYFILE_DISABLE": "1"}
     run(["tar", "-czf", archive, "-C", output, "Diffy.app"], archive_env)
-    dmg_candidates = list(output.glob("*.dmg"))
+    dmg_candidates = list(output.glob(f"Diffy_{version}_*.dmg"))
     if len(dmg_candidates) != 1:
         raise RuntimeError("Expected exactly one packaged DMG.")
     dmg = output / f"Diffy_{version}_aarch64.dmg"
@@ -140,6 +140,9 @@ def main():
     notarize(dmg, env, output / "dmg-notarization.json")
     run(["xcrun", "stapler", "staple", dmg], env)
     run(["xcrun", "stapler", "validate", dmg], env)
+    # Keep customer download links stable while the updater retains versioned URLs.
+    stable_dmg = output / "Diffy-macos-aarch64.dmg"
+    shutil.copyfile(dmg, stable_dmg)
     env["CARGO_PACKAGER_SIGN_PRIVATE_KEY"] = str(ROOT / ".release-secrets/updater.key")
     env["CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD"] = (ROOT / ".release-secrets/updater.password").read_text().strip()
     run([packager, "signer", "sign", archive], env)
@@ -151,7 +154,7 @@ def main():
         "notes": f"Diffy {version} for Apple Silicon Macs. Requires macOS 13 or later.",
         "pub_date": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
     }, indent=2) + "\n")
-    assets = [dmg, archive, signature, manifest]
+    assets = [dmg, stable_dmg, archive, signature, manifest]
     (output / "SHA256SUMS").write_text("".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in assets))
     print(f"Signed, notarized release assets ready in {output}. Publication is not automatic.")
 
