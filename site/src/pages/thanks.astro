@@ -1,17 +1,14 @@
 ---
 import Page from '../layouts/Page.astro';
+import Downloads from '../components/Downloads.astro';
 ---
-<Page title="Download Diffy" description="Download the latest Diffy for Apple Silicon Macs. Save this link for future releases.">
+<Page title="Download Diffy" description="Choose Diffy for macOS, Windows, or Linux. One purchase supports every platform. Save this link for future releases.">
   <main id="main" class="download-page frame">
     <img class="character" src="/chameleon.webp" width="112" height="112" alt="Diffy’s chameleon" />
     <h1>Hey. Here’s Diffy.</h1>
     <p class="intro">Thanks for being here.</p>
-    <a target="_blank" rel="noopener" class="button" href="/download">Download for macOS <span aria-hidden="true">↓</span></a>
-    <p class="compatibility">Apple Silicon · macOS 13+ · Requires Git</p>
-    <div class="install">
-      <h2>Make yourself at home.</h2>
-      <ol><li>Open the downloaded DMG.</li><li>Drag Diffy into Applications.</li><li>Open Diffy and choose a Git project.</li></ol>
-      <p>Save <a target="_blank" rel="noopener" href="/download">diffy.hitslop.com/download</a>.<br />It always downloads the latest version.</p>
-    </div>
+    <p class="compatibility">One purchase supports all platforms. Requires Git.</p>
+    <Downloads />
+    <p class="download-note">Save <a href="/downloads">diffy.hitslop.com/downloads</a> for future releases.</p>
   </main>
 </Page>

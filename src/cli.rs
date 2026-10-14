@@ -2,6 +2,21 @@
 use std::path::{Path, PathBuf};
 use url::Url;
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LaunchConfig {
+    managed_by: String,
+    executable: PathBuf,
+}
+pub fn launcher_target(config: &Path) -> Result<PathBuf, String> {
+    let saved: LaunchConfig =
+        serde_json::from_slice(&std::fs::read(config).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if saved.managed_by != "com.hitslop.diffy" || !saved.executable.is_absolute() {
+        return Err("This configuration isn't a Diffy launcher.".into());
+    }
+    Ok(saved.executable)
+}
+
 #[cfg(unix)]
 const MARKER: &str = "# Managed by com.hitslop.diffy\n";
 
@@ -72,28 +87,32 @@ pub fn launch(paths: &[PathBuf]) -> Result<(), String> {
 
 #[cfg(not(target_os = "macos"))]
 pub fn launch(_: &[PathBuf]) -> Result<(), String> {
-    Err("The terminal launcher currently supports macOS.".into())
+    Err("Run the Diffy executable with repository paths to open projects.".into())
 }
 
 pub fn install_current() -> Result<String, String> {
-    if !cfg!(target_os = "macos") {
-        return Err("The terminal launcher currently supports macOS.".into());
-    }
-    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    if crate::updates::bundle_path(&executable).is_none() {
+    let executable = crate::updates::launch_executable()?;
+    if cfg!(target_os = "macos") && crate::updates::bundle_path(&executable).is_none() {
         return Err("Install the terminal command from a packaged Diffy app.".into());
     }
-    let home = std::env::var_os("HOME").ok_or("Home directory unavailable")?;
-    let directory = PathBuf::from(home).join(".local/bin");
-    install_at(&directory.join("diffy"), &executable)?;
+    let home = directories::BaseDirs::new().ok_or("Home directory unavailable")?;
+    #[cfg(unix)]
+    let directory = home.home_dir().join(".local/bin");
+    #[cfg(windows)]
+    let directory = home.data_local_dir().join("hitSlop/Diffy/bin");
+    let name = if cfg!(windows) { "diffy.exe" } else { "diffy" };
+    install_at(&directory.join(name), &executable)?;
     let on_path = std::env::var_os("PATH")
         .is_some_and(|path| std::env::split_paths(&path).any(|p| p == directory));
     let mut report = format!(
-        "Installed {}\n\nRun diffy . to open a repository in this window.\nReinstall this command if you move Diffy.app.",
-        directory.join("diffy").display()
+        "Installed {}\n\nRun diffy . to open a repository in this window.\nReinstall this command if you move Diffy.",
+        directory.join(name).display()
     );
     if !on_path {
+        #[cfg(unix)]
         report.push_str("\n\nIf your terminal cannot find diffy, add this line to your shell configuration and open a new terminal:\n\nexport PATH=\"$HOME/.local/bin:$PATH\"");
+        #[cfg(windows)]
+        report.push_str(&format!("\n\nAdd {} to your user Path in Windows Environment Variables, then open a new terminal.", directory.display()));
     }
     Ok(report)
 }
@@ -158,14 +177,46 @@ fn install_at(destination: &Path, executable: &Path) -> Result<(), String> {
     result.map_err(|e| format!("Couldn't install terminal command: {e}"))
 }
 
-#[cfg(not(unix))]
-fn install_at(_: &Path, _: &Path) -> Result<(), String> {
-    Err("macOS is required.".into())
+#[cfg(windows)]
+fn install_at(destination: &Path, executable: &Path) -> Result<(), String> {
+    let parent = destination.parent().ok_or("Invalid launcher directory")?;
+    let config = parent.join("diffy-launch.json");
+    if destination.exists() && launcher_target(&config).is_err() {
+        return Err(format!(
+            "{} already exists and isn't a Diffy launcher.",
+            destination.display()
+        ));
+    }
+    let source = executable
+        .parent()
+        .ok_or("Invalid application directory")?
+        .join("diffy-cli.exe");
+    if !source.is_file() {
+        return Err("Install the terminal command from a packaged Diffy app.".into());
+    }
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    use std::io::Write as _;
+    temporary
+        .write_all(
+            &serde_json::to_vec(&LaunchConfig {
+                managed_by: "com.hitslop.diffy".into(),
+                executable: executable.to_path_buf(),
+            })
+            .map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+    temporary.persist(&config).map_err(|e| e.to_string())?;
+    let shim = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    std::fs::copy(source, shim.path()).map_err(|e| e.to_string())?;
+    shim.persist(destination).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     #[test]
     fn open_requests_round_trip_without_shell_interpolation() {
         let paths = vec![

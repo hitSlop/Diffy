@@ -1,6 +1,7 @@
 ---
 import Page from '../layouts/Page.astro';
 import Mascot from '../components/Mascot.astro';
+import { platforms, price } from '../data/releases';
 import { getImage } from 'astro:assets';
 import screenshot from '../../public/diffy.webp';
 const variants = await Promise.all([480, 960, 1440].map(width => getImage({ src: screenshot, width, format: 'webp', quality: 90 })));
@@ -22,13 +23,16 @@ if (checkout) {
       <h1 id="hero-title" class="visually-hidden">Diffy — i literally only show you diffs</h1>
       <Mascot />
       <p class="intro">A native Git diff viewer, built in Rust.</p>
+      <p class="beta-label">Diffy is in beta.</p>
       <p class="agent-line">Keep up with your agents’ changes.</p>
-      <p class="compatibility">Apple Silicon <span aria-hidden="true">·</span> macOS 13+ <span aria-hidden="true">·</span> Requires Git</p>
+      <p class="compatibility">{platforms.map((platform, index) => <>{index > 0 && <span aria-hidden="true"> · </span>}{platform.name} {platform.stage.toLowerCase()}</>)} <span aria-hidden="true">·</span> Requires Git</p>
       <div class="purchase">
-        {purchaseUrl ? <a target="_blank" rel="noopener" class="button" href={purchaseUrl}>Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></a> : <button class="button" disabled aria-describedby="checkout-note">Buy once <span aria-hidden="true">—</span> $19.99 <span class="button-arrow" aria-hidden="true">↗</span></button>}
+        <p class="beta-price"><span class="visually-hidden">Regular price </span><s>{price.regular}</s> <strong>{price.beta}</strong><span> during beta</span></p>
+        {purchaseUrl ? <a target="_blank" rel="noopener" class="button" href={purchaseUrl}>Buy once <span aria-hidden="true">—</span> {price.beta} <span class="button-arrow" aria-hidden="true">↗</span></a> : <button class="button" disabled aria-describedby="checkout-note">Buy once <span aria-hidden="true">—</span> {price.beta} <span class="button-arrow" aria-hidden="true">↗</span></button>}
         {!purchaseUrl && <p id="checkout-note" class="checkout-note">Checkout coming soon.</p>}
         <a target="_blank" rel="noopener" class="build-link" href="https://github.com/hitSlop/Diffy">Or build for free <span aria-hidden="true">↗</span></a>
-        <p class="support-note">Your purchase supports Diffy.</p>
+        <p class="support-note">One purchase. All platforms. Your purchase supports Diffy.</p>
+        <a class="build-link" href="/downloads">Downloads & installation <span aria-hidden="true">↓</span></a>
       </div>
     </section>
     <figure class="screenshot frame">
@@ -52,7 +56,7 @@ if (checkout) {
           <dd>
             <p>Jump between files and projects. Find a command without hunting for a button.</p>
             <div class="shortcuts"><span><kbd>⌘P</kbd> Commands</span><span><kbd>⌘↑</kbd><kbd>⌘↓</kbd> Files</span><span><kbd>⇧⌘↑</kbd><kbd>⇧⌘↓</kbd> Projects</span></div>
-            <p class="terminal-note">Install the terminal command, then start with <code>diffy .</code></p>
+            <p class="terminal-note">Use ⌘ on macOS and Ctrl on Windows/Linux. Install the terminal command, then start with <code>diffy .</code></p>
           </dd>
         </div>
         <div class="feature-row">
@@ -69,7 +73,7 @@ if (checkout) {
         </div>
         <div class="feature-row">
           <dt>Make projects feel familiar.</dt>
-          <dd><p>Give each project a name, color, emoji, or image. Right-click its icon to open the current checkout in Finder, your terminal, or your editor.</p></dd>
+          <dd><p>Give each project a name, color, emoji, or image. Right-click its icon to open the current checkout in your file manager, terminal, or editor.</p></dd>
         </div>
         <div class="feature-row">
           <dt>Read at your own pace.</dt>

@@ -1,6 +1,7 @@
 //! Offline verification and installation exercises never modify the user's app.
 #![cfg(debug_assertions)]
 use cargo_packager_updater::{Config, Update, UpdateFormat};
+#[allow(unused_imports)]
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -40,6 +41,34 @@ fn real_signatures_accept_exact_bytes_and_reject_corruption() {
     assert!(diffy::updates::verify_archive(&payload, public, "invalid signature").is_err());
     let invalid = update(public, signature, PathBuf::from("/unused"));
     assert!(diffy::updates::Package::install(&invalid, corrupted).is_err());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_signed_raw_payload_replaces_outer_file_and_preserves_permissions() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let fixture = tempfile::tempdir().unwrap();
+    let destination = fixture.path().join("Diffy.AppImage");
+    fs::write(&destination, b"old executable").unwrap();
+    fs::set_permissions(&destination, fs::Permissions::from_mode(0o755)).unwrap();
+    let bytes = include_bytes!("fixtures/update/payload.txt").to_vec();
+    let mut package = update(
+        include_str!("fixtures/update/public.key"),
+        include_str!("fixtures/update/payload.txt.sig"),
+        destination.clone(),
+    );
+    package.target = "linux-x86_64".into();
+    package.format = UpdateFormat::AppImage;
+    let mut corrupted = bytes.clone();
+    corrupted[0] ^= 1;
+    assert!(diffy::updates::Package::install(&package, corrupted).is_err());
+    assert_eq!(fs::read(&destination).unwrap(), b"old executable");
+    diffy::updates::Package::install(&package, bytes.clone()).unwrap();
+    assert_eq!(fs::read(&destination).unwrap(), bytes);
+    assert_eq!(
+        fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
 }
 
 #[test]

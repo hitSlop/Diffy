@@ -128,8 +128,11 @@ pub fn init(cx: &mut App) {
             gpui_kit::MenuItem::action("About Diffy", About),
             gpui_kit::MenuItem::action("Check for Updates…", CheckForUpdates),
             gpui_kit::MenuItem::Separator,
+            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Hide Diffy", Hide),
+            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Hide Others", HideOthers),
+            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Show All", ShowAll),
             gpui_kit::MenuItem::Separator,
             gpui_kit::MenuItem::action("Quit Diffy", Quit),
@@ -147,13 +150,14 @@ pub fn init(cx: &mut App) {
         gpui_kit::Menu::new("File").items([
             gpui_kit::MenuItem::action("Open Repository…", OpenProject),
             gpui_kit::MenuItem::action("Import Projects…", ImportProjects),
-            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Install terminal command…", InstallCli),
             gpui_kit::MenuItem::action("Refresh Repository", Refresh),
         ]),
     ]);
     cx.bind_keys([
+        #[cfg(target_os = "macos")]
         KeyBinding::new("secondary-h", Hide, Some("Diffy")),
+        #[cfg(target_os = "macos")]
         KeyBinding::new("secondary-alt-h", HideOthers, Some("Diffy")),
         KeyBinding::new("secondary-p", OpenCommandPalette, Some("Diffy")),
         KeyBinding::new("secondary-o", OpenProject, Some("Diffy")),
@@ -204,6 +208,7 @@ pub struct Diffy {
     project_apps: project_menu::Runtime,
     repeat_direction: Option<isize>,
     file_repeat: Option<Task<()>>,
+    native_repeat_at: Option<std::time::Instant>,
     file_key_probe: fn(isize) -> bool,
     file_scroll_remainder: f32,
     file_scroll_axis: Option<files::FileScrollAxis>,

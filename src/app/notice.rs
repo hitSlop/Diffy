@@ -141,6 +141,10 @@ impl Diffy {
             let _ = owner.update(cx, |this, cx| match result {
                 Ok(()) => {
                     this.persist(cx);
+                    #[cfg(target_os = "linux")]
+                    if let Ok(path) = updates::launch_executable() {
+                        cx.set_restart_path(path);
+                    }
                     cx.restart();
                 }
                 Err(error) => {

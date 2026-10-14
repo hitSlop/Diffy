@@ -83,7 +83,14 @@ fn exact_rename_literal_paths_preview_and_writes_work_across_backends() {
     commit(&f);
     f.git(&["mv", "old.rs", "new.rs"]);
     f.write("new.rs", "working change after rename\n");
-    f.write(":(glob)*\n雪.rs", "literal file\n");
+    f.write(
+        if cfg!(windows) {
+            "[é] 雪 space.rs"
+        } else {
+            ":(glob)*\n雪.rs"
+        },
+        "literal file\n",
+    );
     let listing = parity(&f.0, MetadataBackend::Gix);
     assert_eq!(listing.groups[0][0].original.as_deref(), Some("old.rs"));
     for group in [ChangeGroup::Staged, ChangeGroup::Changes] {
@@ -525,7 +532,14 @@ fn gix_handles_literal_names_renames_and_linked_worktrees() {
     fixture.git(&["commit", "-m", "base"]);
     fixture.git(&["mv", "old.rs", "new.rs"]);
     fixture.write("new.rs", "unstaged content\n");
-    fixture.write(":(glob)*\n雪.rs", "literal new file\n");
+    fixture.write(
+        if cfg!(windows) {
+            "[é] 雪 space.rs"
+        } else {
+            ":(glob)*\n雪.rs"
+        },
+        "literal new file\n",
+    );
     let metadata = diffy::repository::load_metadata(&fixture.0).unwrap();
     let expected = metadata.groups.map(|files| {
         files

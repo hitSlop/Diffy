@@ -444,6 +444,19 @@ impl Diffy {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !cfg!(target_os = "macos") && !(self.file_key_probe)(direction) {
+            let now = std::time::Instant::now();
+            if self.repeat_direction != Some(direction)
+                || self
+                    .native_repeat_at
+                    .is_none_or(|last| now.duration_since(last) >= Duration::from_millis(200))
+            {
+                self.move_file(direction, cx);
+                self.repeat_direction = Some(direction);
+                self.native_repeat_at = Some(now);
+            }
+            return;
+        }
         if self.repeat_direction == Some(direction) && (self.file_key_probe)(direction) {
             return; // The timer owns repeats; ignore native autorepeat duplicates.
         }
@@ -493,6 +506,7 @@ impl Diffy {
     }
     pub(super) fn stop_file_repeat(&mut self) {
         self.repeat_direction = None;
+        self.native_repeat_at = None;
         self.file_repeat = None;
     }
     /// Capture runs before the diff list applies the wheel, so stopping the

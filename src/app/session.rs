@@ -152,6 +152,7 @@ impl Diffy {
             project_apps: Default::default(),
             repeat_direction: None,
             file_repeat: None,
+            native_repeat_at: None,
             file_key_probe: keyboard::file_shortcut_pressed,
             file_scroll_remainder: 0.,
             file_scroll_axis: None,

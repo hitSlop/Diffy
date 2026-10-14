@@ -151,6 +151,11 @@ fn git_launch() -> Result<&'static GitLaunch, String> {
 fn git_command() -> Result<Command, String> {
     let launch = git_launch()?;
     let mut command = Command::new(&launch.program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW: background Git reads must not open consoles.
+    }
     if let Some(path) = &launch.path {
         command.env("PATH", path);
     }
@@ -654,7 +659,10 @@ mod tests {
     #[test]
     fn literal_pathspecs_and_unborn_unstage() {
         let repo = TestRepository::new();
+        #[cfg(not(windows))]
         let name = ":(glob)* [é]\t\".rs";
+        #[cfg(windows)]
+        let name = "[é] 日本語 space.rs";
         repo.write(name, "literal\n");
         repo.write("other.rs", "other\n");
         let snapshot = load(&repo.0).unwrap();
@@ -685,7 +693,14 @@ mod tests {
         repo.write("one.rs", "index\n");
         git(&repo.0, &["add", "one.rs"]).unwrap();
         repo.write("one.rs", "latest\n");
-        repo.write(":(glob)*.rs", "literal\n");
+        repo.write(
+            if cfg!(windows) {
+                "[é] space.rs"
+            } else {
+                ":(glob)*.rs"
+            },
+            "literal\n",
+        );
         repo.write("ignored.rs", "ignored\n");
         repo.write(".git/info/exclude", "ignored.rs\n");
         std::fs::remove_file(repo.0.join("delete.rs")).unwrap();
@@ -872,7 +887,14 @@ mod tests {
         git(&repo.0, &["add", "one.rs"]).unwrap();
         repo.write("one.rs", "working\n");
         git(&repo.0, &["mv", "old.rs", "new.rs"]).unwrap();
-        repo.write(":(glob)* unusual\nname.rs", "new\n");
+        repo.write(
+            if cfg!(windows) {
+                "[é] unusual name.rs"
+            } else {
+                ":(glob)* unusual\nname.rs"
+            },
+            "new\n",
+        );
         std::fs::write(repo.0.join("binary.dat"), b"\0binary").unwrap();
         let before = std::fs::read(repo.0.join(".git/index")).unwrap();
         let listing = load_metadata(&repo.0).unwrap();

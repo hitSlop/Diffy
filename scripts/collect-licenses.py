@@ -3,11 +3,12 @@
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
 metadata = json.loads(subprocess.check_output([
-    "cargo", "metadata", "--locked", "--format-version", "1", "--filter-platform", "aarch64-apple-darwin"
+    "cargo", "metadata", "--locked", "--format-version", "1", "--filter-platform", sys.argv[1] if len(sys.argv) > 1 else "aarch64-apple-darwin"
 ], cwd=root))
 output = root / "target/packaging/licenses"
 if output.exists():

@@ -4,6 +4,7 @@ version = "0.2.3"
 edition = "2024"
 description = "A small desktop Git diff viewer"
 publish = false
+default-run = "diffy"
 license = "MIT"
 repository = "https://github.com/hitSlop/diffy"
 
@@ -21,6 +22,11 @@ ignore = "=0.4.33"
 notify = "=8.2.0"
 nucleo-matcher = "=0.3.1"
 async-channel = "=2.5.0"
+directories = "=6.0.0"
+fs2 = "=0.4.3"
+interprocess = "=2.4.4"
+tempfile = "3.27"
+which = "8"
 lru = "=0.18.5"
 gix = { version = "=0.89.0", default-features = false, features = ["basic", "status", "sha1"] }
 tracing = "0.1"
@@ -37,11 +43,19 @@ objc2 = "=0.6.5"
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSWorkspace"] }
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "NSURL"] }
 
-[target.'cfg(windows)'.dependencies]
-interprocess = "=2.4.4"
-
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
+
+[build-dependencies]
+embed-resource = "=3.0.11"
+
+[[bin]]
+name = "diffy"
+path = "src/main.rs"
+
+[[bin]]
+name = "diffy-cli"
+path = "src/terminal.rs"
 
 [[bench]]
 name = "performance"

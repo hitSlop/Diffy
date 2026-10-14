@@ -132,11 +132,7 @@ impl Diffy {
                 Box::new(ImportProjects),
                 false,
             ),
-            item(
-                "Install terminal command",
-                Box::new(InstallCli),
-                !cfg!(target_os = "macos"),
-            ),
+            item("Install terminal command", Box::new(InstallCli), false),
             item(
                 "Refresh repository",
                 Box::new(Refresh),
@@ -206,7 +202,7 @@ impl Diffy {
                 !p.is_some_and(|p| p.path.is_some() && p.view().selected_entry().is_some()),
             ),
             item(
-                "Reveal in Finder",
+                crate::project_apps::reveal_label(),
                 Box::new(super::RevealFile),
                 !p.is_some_and(|p| p.path.is_some() && p.view().selected_entry().is_some()),
             ),

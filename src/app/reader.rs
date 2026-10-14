@@ -134,7 +134,7 @@ pub(super) fn file_menu(
         !local,
     )
     .menu_with_disabled(
-        "Reveal in Finder",
+        crate::project_apps::reveal_label(),
         Box::new(super::RevealPath {
             id,
             path: path.into(),

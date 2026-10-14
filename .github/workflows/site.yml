@@ -28,6 +28,11 @@ jobs:
       - run: npm run build
         env:
           DODO_CHECKOUT_URL: ${{ matrix.checkout }}
+          DIFFY_RELEASED_PLATFORMS: ${{ matrix.checkout == '' && 'macos' || 'macos,windows,linux' }}
+      - run: node scripts/check-build.mjs
+        env:
+          DODO_CHECKOUT_URL: ${{ matrix.checkout }}
+          DIFFY_RELEASED_PLATFORMS: ${{ matrix.checkout == '' && 'macos' || 'macos,windows,linux' }}
   deploy:
     name: Deploy production
     needs: build
@@ -61,6 +66,7 @@ jobs:
       - run: npm run build
         env:
           DODO_CHECKOUT_URL: ${{ vars.DODO_CHECKOUT_URL }}
+          DIFFY_RELEASED_PLATFORMS: ${{ vars.DIFFY_RELEASED_PLATFORMS || 'macos' }}
       - name: Upload production site
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
         with:
