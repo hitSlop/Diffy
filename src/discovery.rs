@@ -192,6 +192,7 @@ impl Scanner {
         enabled: [bool; 3],
         cancelled: &AtomicBool,
     ) -> Snapshot {
+        let _span = tracing::info_span!("project_discovery").entered();
         let mut raw = Vec::new();
         let mut snapshot = Snapshot::default();
         for source in Source::ALL {
@@ -270,20 +271,26 @@ impl Scanner {
         }
         snapshot.herdr_live = enabled[0] && self.herdr_live;
         snapshot.candidates = merged.into_values().collect();
-        snapshot.candidates.sort_by(|a, b| {
+        snapshot.candidates.sort_by_cached_key(|candidate| {
             (
-                a.section(),
-                std::cmp::Reverse(a.created_at),
-                a.name().to_lowercase(),
-                &a.path,
+                candidate.section(),
+                std::cmp::Reverse(candidate.created_at),
+                candidate.name().to_lowercase(),
+                candidate.path.clone(),
             )
-                .cmp(&(
-                    b.section(),
-                    std::cmp::Reverse(b.created_at),
-                    b.name().to_lowercase(),
-                    &b.path,
-                ))
         });
+        if !cancelled.load(Ordering::Relaxed) {
+            self.metadata.retain(|path, _| path.is_file());
+            self.roots.retain(|path, _| path.is_dir());
+            let referenced: BTreeSet<_> = self
+                .metadata
+                .values()
+                .filter_map(|(_, result)| result.as_ref().ok())
+                .flatten()
+                .cloned()
+                .collect();
+            self.created.retain(|path, _| referenced.contains(path));
+        }
         snapshot
     }
     fn sessions(

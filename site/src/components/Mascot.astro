@@ -1,11 +1,16 @@
-<div class="mascot character" data-mascot>
-  <img src="/chameleon.webp" width="160" height="160" alt="Diffy’s colorful chameleon" fetchpriority="high" />
-  <svg class="mascot-eye" viewBox="0 0 1254 1254" aria-hidden="true" focusable="false">
+---
+import { Image } from 'astro:assets';
+import hero from '../assets/hero.png';
+---
+
+<div class="mascot" data-mascot>
+  <Image src={hero} widths={[480, 960, 1440]} sizes="(max-width: 515px) calc(100vw - 36px), 480px" format="webp" quality={95} alt={'A tearful developer at a keyboard says, “thank you for changing my life.” Diffy’s colorful chameleon replies, “i literally only show you diffs.”'} loading="eager" fetchpriority="high" />
+  <svg class="mascot-eye" viewBox="0 0 1860 845" aria-hidden="true" focusable="false">
     <defs>
-      <path id="diffy-eye-opening" d="M526 720C492 624 552 541 651 513C771 479 892 510 934 612C979 721 911 829 799 866C685 908 568 862 526 720Z" />
+      <path id="diffy-eye-opening" d="M1198 545C1198 497 1239 449 1279 447C1330 443 1384 478 1401 526C1424 584 1376 633 1329 638C1273 646 1218 620 1202 574C1199 564 1198 554 1198 545Z" />
       <clipPath id="diffy-eye-clip"><use href="#diffy-eye-opening" /></clipPath>
-      <radialGradient id="diffy-sclera" cx="68%" cy="26%" r="85%">
-        <stop offset="0" stop-color="#fffef2" /><stop offset=".35" stop-color="#fffef5" /><stop offset=".68" stop-color="#c0ffac" /><stop offset=".91" stop-color="#5aeb77" /><stop offset="1" stop-color="#19ba57" />
+      <radialGradient id="diffy-sclera" gradientUnits="userSpaceOnUse" cx="1278" cy="480" r="169">
+        <stop offset="0" stop-color="#feffff" /><stop offset=".33" stop-color="#fffef0" /><stop offset=".62" stop-color="#d8ffd0" /><stop offset=".82" stop-color="#9bf5b1" /><stop offset="1" stop-color="#28ca63" />
       </radialGradient>
       <radialGradient id="diffy-pupil" cx="35%" cy="15%" r="95%">
         <stop offset="0" stop-color="#474c51" /><stop offset=".3" stop-color="#101519" /><stop offset=".7" stop-color="#010806" /><stop offset=".9" stop-color="#082b17" /><stop offset="1" stop-color="#11150a" />
@@ -17,9 +22,9 @@
     <g clip-path="url(#diffy-eye-clip)">
       <use href="#diffy-eye-opening" fill="url(#diffy-sclera)" />
       <g data-pupil>
-        <g transform="rotate(-12 750 690)">
-          <ellipse cx="750" cy="690" rx="100" ry="124" fill="url(#diffy-pupil)" stroke="url(#diffy-pupil-edge)" stroke-width="7" />
-          <ellipse cx="790" cy="623" rx="27" ry="34" fill="#fff" />
+        <g transform="rotate(18 1247 531)">
+          <ellipse cx="1247" cy="531" rx="45" ry="62" fill="url(#diffy-pupil)" stroke="url(#diffy-pupil-edge)" stroke-width="3" />
+          <ellipse cx="1229" cy="501" rx="12" ry="16" fill="#fff" />
         </g>
       </g>
     </g>
@@ -37,6 +42,7 @@
     let frame = 0;
     let previousTime = 0;
     let x = 0, y = 0, targetX = 0, targetY = 0;
+    let aimPending = false;
     let lastPointer: { x: number; y: number } | undefined;
 
     const stop = () => {
@@ -48,6 +54,7 @@
     const animate = (time: number) => {
       frame = 0;
       if (!enabled || !visible || document.hidden) return;
+      if (aimPending) { aimPending = false; measureAim(); }
       const dt = previousTime ? Math.min((time - previousTime) / 1000, .05) : 1 / 60;
       previousTime = time;
       const ease = 1 - Math.exp(-14 * dt);
@@ -57,6 +64,7 @@
         x = targetX;
         y = targetY;
         previousTime = 0;
+        if (!lastPointer) mascot.classList.remove('is-tracking');
       } else {
         frame = requestAnimationFrame(animate);
       }
@@ -67,20 +75,26 @@
     };
     const neutral = () => {
       lastPointer = undefined;
+      aimPending = false;
       targetX = targetY = 0;
       start();
     };
-    const aim = () => {
+    const measureAim = () => {
       if (!enabled || !visible || !lastPointer) return;
       const box = mascot.getBoundingClientRect();
-      const dx = lastPointer.x - (box.left + box.width * 750 / 1254);
-      const dy = lastPointer.y - (box.top + box.height * 690 / 1254);
+      const dx = lastPointer.x - (box.left + box.width * 1302 / 1860);
+      const dy = lastPointer.y - (box.top + box.height * 545 / 845);
       const distance = Math.hypot(dx, dy);
-      // Six/four pixels of travel at 160px, expressed in the artwork's coordinates.
-      const strength = Math.min(distance / 180, 1);
-      targetX = distance ? dx / distance * strength * 47 : 0;
-      targetY = distance ? dy / distance * strength * 31 : 0;
+      // Work in banner coordinates so the eye and its travel scale together.
+      // The original pupil looks left; aim around the center of the eyeball.
+      const strength = Math.min(distance / Math.max(box.width * .2, 1), 1);
+      targetX = 55 + (distance ? dx / distance * strength * 40 : 0);
+      targetY = 14 + (distance ? dy / distance * strength * 25 : 0);
       mascot.classList.add('is-tracking');
+    };
+    const aim = () => {
+      if (!enabled || !visible || !lastPointer) return;
+      aimPending = true;
       start();
     };
     const configure = () => {

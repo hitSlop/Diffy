@@ -154,6 +154,9 @@ def main():
         "notes": f"Diffy {version} for Apple Silicon Macs. Requires macOS 13 or later.",
         "pub_date": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
     }, indent=2) + "\n")
+    # Exercise the signed archive before considering the release assets ready.
+    verify_env = {**env, "DIFFY_TEST_UPDATE_ARCHIVE": str(archive), "DIFFY_TEST_UPDATE_SIGNATURE": str(signature), "DIFFY_TEST_UPDATE_VERSION": version}
+    run(["cargo", "test", "--locked", "--test", "update_archive", "signed_app_archive_installs_and_relaunches_an_isolated_bundle", "--", "--ignored", "--exact"], verify_env)
     assets = [dmg, stable_dmg, archive, signature, manifest]
     (output / "SHA256SUMS").write_text("".join(f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n" for p in assets))
     print(f"Signed, notarized release assets ready in {output}. Publication is not automatic.")

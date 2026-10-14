@@ -741,7 +741,7 @@ fn main() {
     cx.run_until_parked();
     let saved_width = diffy::state::load(&prefs).unwrap().sidebar_width.unwrap();
     assert!(saved_width > 320.);
-    // Right-click settings, cancellation, and saved appearance survive restart.
+    // Right-click opens a menu first; Edit opens settings.
     cx.update_window(real_handle, |_, w, cx| {
         use gpui_kit::InputEvent as _;
         let position = w.find(("project", 0usize)).bounds().center();
@@ -756,6 +756,19 @@ fn main() {
             .to_platform_input(),
             cx,
         );
+        w.render_frame(cx);
+        assert!(w.try_find("project-settings").is_none());
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(real_handle, |_, w, cx| {
+        w.render_frame(cx);
+        w.press("down", cx);
+        w.press("enter", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(real_handle, |_, w, cx| {
         w.render_frame(cx);
         assert!(w.try_find("project-settings").is_some());
         w.press("cmd-a", cx);
@@ -1311,6 +1324,23 @@ fn main() {
             large_view.read(cx).selected_file().map(|p| p.as_str()),
             Some("large.txt")
         );
+    })
+    .unwrap();
+    // This scope's source is fetched when selected, rather than during every refresh.
+    for _ in 0..500 {
+        cx.run_until_parked();
+        let ready = cx
+            .update_window(large_handle, |_, w, cx| {
+                w.render_frame(cx);
+                !large_view.read(cx).is_busy()
+            })
+            .unwrap();
+        if ready {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    cx.update_window(large_handle, |_, _, cx| {
         assert_eq!(large_view.read(cx).selected_additions(), 3003);
     })
     .unwrap();

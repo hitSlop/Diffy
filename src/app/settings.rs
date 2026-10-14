@@ -43,6 +43,8 @@ pub(super) struct ProjectSettings {
     pub(super) color: Entity<ColorPickerState>,
     pub(super) icon: Option<state::ProjectIcon>,
     pub(super) error: Option<String>,
+    image_generation: u64,
+    importing_image: bool,
 }
 
 impl Diffy {
@@ -80,6 +82,8 @@ impl Diffy {
             color: cx.new(|cx| ColorPickerState::new(window, cx).default_value(rgb(color))),
             icon,
             error: None,
+            image_generation: 0,
+            importing_image: false,
         });
         cx.notify();
     }
@@ -95,6 +99,9 @@ impl Diffy {
         let Some(draft) = &self.settings else {
             return;
         };
+        if draft.importing_image {
+            return;
+        }
         let name = draft.name.read(cx).value().trim().to_owned();
         if name.is_empty() {
             self.settings.as_mut().unwrap().error = Some("Enter a project name.".into());
@@ -122,9 +129,17 @@ impl Diffy {
         self.close_settings(window, cx);
     }
     pub(super) fn choose_project_image(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(id) = self.settings.as_ref().map(|s| s.id) else {
+        let Some(draft) = self.settings.as_mut() else {
             return;
         };
+        draft.image_generation += 1;
+        let generation = draft.image_generation;
+        // The input entity identifies this particular opening of the dialog.
+        let dialog = draft.name.entity_id();
+        draft.importing_image = true;
+        draft.error = None;
+        let state_path = self.state_path.clone();
+        cx.notify();
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -132,31 +147,48 @@ impl Diffy {
             prompt: Some("Choose project icon".into()),
         });
         cx.spawn_in(window, async move |this, cx| {
-            if let Ok(Ok(Some(paths))) = paths.await
-                && let Some(path) = paths.into_iter().next()
-            {
-                let _ = cx.update(|_, cx| {
-                    this.update(cx, |this, cx| {
-                        if let Some(draft) = &mut this.settings
-                            && draft.id == id
-                        {
-                            let supported =
-                                path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-                                    gpui_kit::Img::extensions()
-                                        .contains(&e.to_ascii_lowercase().as_str())
-                                });
-                            if supported && path.is_file() {
-                                draft.icon = Some(state::ProjectIcon::Image(path));
-                                draft.error = None;
-                            } else {
-                                draft.error =
-                                    Some("Choose an image such as PNG, JPEG, WebP, or SVG.".into());
-                            }
-                            cx.notify();
-                        }
-                    })
-                });
-            }
+            let result = match paths.await {
+                Ok(Ok(Some(paths))) => match paths.into_iter().next() {
+                    Some(path) => {
+                        cx.background_executor()
+                            .spawn(async move {
+                                match state_path {
+                                    Some(state_path) => {
+                                        state::import_project_icon(&state_path, &path).map(Some)
+                                    }
+                                    // Demo sessions never write app data.
+                                    None => {
+                                        let supported = path.extension().and_then(|e| e.to_str())
+                                            .is_some_and(|e| gpui_kit::Img::extensions().contains(&e.to_ascii_lowercase().as_str()));
+                                        if supported && path.is_file() {
+                                            Ok(Some(path))
+                                        } else {
+                                            Err("Choose an image such as PNG, JPEG, WebP, or SVG.".into())
+                                        }
+                                    }
+                                }
+                            })
+                            .await
+                    }
+                    None => Ok(None),
+                },
+                Ok(Ok(None)) => Ok(None),
+                _ => Err("Couldn't open the image picker. Try again.".into()),
+            };
+            let _ = this.update(cx, |this, cx| {
+                if let Some(draft) = &mut this.settings
+                    && draft.name.entity_id() == dialog
+                    && draft.image_generation == generation
+                {
+                    draft.importing_image = false;
+                    match result {
+                        Ok(Some(path)) => draft.icon = Some(state::ProjectIcon::Image(path)),
+                        Ok(None) => {}
+                        Err(error) => draft.error = Some(error),
+                    }
+                    cx.notify();
+                }
+            });
         })
         .detach();
     }
@@ -249,6 +281,9 @@ impl Diffy {
                                                     .on_click(cx.listener(|this, _, _, cx| {
                                                         if let Some(s) = &mut this.settings {
                                                             s.icon = None;
+                                                            s.image_generation += 1;
+                                                            s.importing_image = false;
+                                                            s.error = None;
                                                         }
                                                         cx.notify();
                                                     })),
@@ -257,6 +292,7 @@ impl Diffy {
                                                 Button::new("icon-image")
                                                     .ghost()
                                                     .label("Choose image…")
+                                                    .disabled(draft.importing_image)
                                                     .selected(image)
                                                     .on_click(cx.listener(|this, _, w, cx| {
                                                         this.choose_project_image(w, cx)
@@ -290,14 +326,20 @@ impl Diffy {
                                                                 .object_fit(ObjectFit::Cover),
                                                         ),
                                                 )
-                                                .child(
-                                                    div().flex_1().min_w_0().truncate().child(
+                                                .child(div().flex_1().min_w_0().truncate().child(
+                                                    if path.parent().and_then(|p| p.file_name())
+                                                        == Some(std::ffi::OsStr::new(
+                                                            "project-icons",
+                                                        ))
+                                                    {
+                                                        "Saved in Diffy".to_owned()
+                                                    } else {
                                                         path.file_name()
                                                             .unwrap_or_default()
                                                             .to_string_lossy()
-                                                            .to_string(),
-                                                    ),
-                                                ),
+                                                            .to_string()
+                                                    },
+                                                )),
                                         )
                                     }),
                             )
@@ -307,6 +349,9 @@ impl Diffy {
                                     .text_size(px(12.))
                                     .child(e.clone())
                             }))
+                            .when(draft.importing_image, |box_| {
+                                box_.child(div().text_size(px(12.)).child("Copying image…"))
+                            })
                             .child(
                                 h_flex()
                                     .justify_between()
@@ -343,6 +388,7 @@ impl Diffy {
                                             .child(
                                                 Button::new("settings-save")
                                                     .label("Save")
+                                                    .disabled(draft.importing_image)
                                                     .on_click(cx.listener(|this, _, w, cx| {
                                                         this.save_settings(w, cx)
                                                     })),

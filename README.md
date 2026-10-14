@@ -15,8 +15,11 @@ A small native Rust/GPUI Kit diff viewer for macOS.
 - Hover **+ / −** actions in file rows and the preview header for whole-file staging/unstaging. Row actions affect that row without selecting it.
 - Sticky **Stage all / Unstage all** below the file list runs one Git operation for the current scope; it is also available in the command palette.
 - A searchable **⌘P** palette for switching projects and executing commands.
+- Right-click a file or its preview path to copy its relative/absolute path or reveal it in Finder. Deleted files reveal the nearest existing parent.
+- **⌘+ / ⌘− / ⌘0** increase, decrease, or reset the diff font size. The View menu and palette also toggle line wrapping; both reading settings are remembered.
 - Opened repositories, their order, active project, scopes, diff modes, selected files, custom names, icons, and sidebar width are remembered across launches. Drag the sidebar divider to resize it; the handle appears on hover.
-- Right-click a project for settings: rename it, change its color with GPUI Kit's color picker, enter an emoji (⌃⌘Space opens the macOS picker), choose an image, or remove it from Diffy. Image icons reference the chosen local file; unavailable images fall back to the project initial. Images use rounded square crops and stay fixed in size during hover.
+- Right-click a project for **Edit Project…**, **Open in Finder**, **Remove Project**, and shortcuts to installed terminals and editors. Diffy detects iTerm, Warp, Ghostty, Terminal, VS Code, VS Code Insiders, Cursor, and Zed through macOS, including apps installed outside `/Applications`. Detection refreshes when Diffy regains focus. Open actions target the clicked project and follow the destination app's window/tab preferences.
+- **Edit Project…** lets you rename it, change its color with GPUI Kit's color picker, enter an emoji (⌃⌘Space opens the macOS picker), or choose an image. Selected images are copied into Diffy's own storage in the background, so moving or deleting the original won't remove the icon. Images use rounded square crops and stay fixed in size during hover.
 - Removing from Diffy only removes the saved entry. It never deletes a project or changes its Git state.
 - Holding ⌘↑/↓ advances through files at approximately five per second after a brief initial delay; individual taps stay immediate. macOS holds use a timer and physical key-state checks, independent of OS shortcut autorepeat. Navigation preferences save after a short idle debounce.
 - Drag the unused toolbar area to move the window. A short repository path and branch sit on the left of the footer, with keyboard hints on the right; no app title, change description, commit, approval, or messaging controls.
@@ -87,9 +90,11 @@ In the palette, Enter executes; Escape clears a nonempty query, then closes. Cli
 
 Each project remembers its scope; each scope retains its selection and viewport during the session. When staging removes the selected file, Diffy selects the next remaining file, with a previous-file fallback at the end. Background operations retain user navigation where possible and block duplicate writes.
 
+Unmerged files remain readable with their conflict markers. Resolve and stage them outside Diffy; bulk staging skips them while other files stay usable.
+
 Git writes affect the selected file's index entries only. Unstaging preserves working-tree contents, including on unborn branches. Rename actions include both paths; copy actions affect the destination only. Errors retain the last good preview.
 
-Preferences live at `~/Library/Application Support/Diffy/state.json` and contain paths and viewer settings, never patches or source contents. Tests inject temporary storage; `DIFFY_STATE_PATH` can override the path for isolated development sessions.
+Preferences live at `~/Library/Application Support/Diffy/state.json` and contain paths and viewer settings, never patches or source contents. Imported project images live beside it in `project-icons/`, named by their SHA-256 contents so matching filenames cannot overwrite other icons. Back up the folder to keep both preferences and images. Existing image references remain readable; selecting an image again copies it into managed storage. Tests inject temporary storage; `DIFFY_STATE_PATH` can override the path for isolated development sessions and also relocates the icon folder.
 
 ## Build a macOS app
 
@@ -98,7 +103,7 @@ Preferences live at `~/Library/Application Support/Diffy/state.json` and contain
 open dist/Diffy.app
 ```
 
-The default bundle uses a development build; `--release` builds an optimized app. The bundle is locally ad-hoc signed.
+The default bundle uses a development build; `--release` builds an optimized app. When the project's Developer ID certificate is available in the login keychain, local bundles use it so macOS can remember folder permissions across rebuilds. Other machines fall back to ad-hoc signing, which may prompt again after rebuilding. `DIFFY_CODESIGN_IDENTITY` selects another installed signer (or `-` for ad-hoc); `DIFFY_CODESIGN_KEYCHAIN` overrides the keychain path. These bundles are local development builds, without notarization or release publishing.
 
 ## Verify
 
@@ -110,11 +115,20 @@ cargo run --locked -- --check /path/to/repository
 cargo test --locked --features ui-tests --test ui
 ```
 
-Git tests run in disposable repositories and cover independent scopes, index preservation during reads, literal filenames, renames, deletions, copies, unborn HEAD, binary additions, and index-lock failures. Preference tests cover atomic saves, restoration, invalid state, and removal without changing repository files. Native UI tests exercise the actual offscreen Metal renderer, palette commands, hover actions, staging shortcuts, reduced motion, restoration, empty states, large-file scrolling, and automatic edit/index detection; PNG previews go to `target/previews`.
+Git tests run in disposable repositories and cover independent scopes, index preservation during reads, literal filenames, renames, deletions, copies, unborn HEAD, binary additions, and index-lock failures. Preference tests cover serialized background saves, latest-state flushing, atomic saves, restoration, invalid state, and removal without changing repository files. Native UI tests exercise the actual offscreen Metal renderer, palette commands, hover actions, staging shortcuts, reduced motion, restoration, empty states, large-file scrolling, and automatic edit/index detection; PNG previews go to `target/previews`.
 
 Repositories refresh automatically after file and Git metadata changes, with a short debounce. Linked worktree metadata is watched too; ⌘R remains available. Background edits preserve the visible source-line anchor when it still exists, and unrelated file changes retain the current preview. Diff panes are bounded, and overflow scrollbars stay visible. A narrow GPUI Component patch fixes offscreen row estimates for large-file scrolling; see [vendor/README.md](vendor/README.md).
 
-This POC loads full patches in the background. Remote machines, advanced diff engines, and exact scroll-position restoration across launches remain later work.
+File lists refresh from Git metadata. Only the active file’s full patch loads in the background; inactive previews release source contents while retaining a reading anchor. Parsed previews and highlighting share bounded caches with a combined 64 MiB estimated budget. Remote machines, advanced diff engines, and exact scroll-position restoration across launches remain later work.
+
+The read-only gix metadata backend ships behind an internal rollout switch. Git remains the default. To try it:
+
+```sh
+DIFFY_GIT_BACKEND=gix cargo run --locked -- /path/to/repository
+DIFFY_GIT_BACKEND=gix cargo run --locked -- --check /path/to/repository
+```
+
+`--check` reports which backend actually supplied the listing. Unset the variable or set `DIFFY_GIT_BACKEND=git` to use Git throughout. Native read errors and unsupported cases automatically fall back to Git: conflicts, submodules, sparse checkout, intent-to-add entries, inherited repository/config environment overrides, embedded repositories, uncertain rename matches, and changed files with content-conversion attributes or enabled `core.autocrlf`. Both backends use the same cache revision keys and watch directories. Branch labels, source previews, ignore checks for watcher events, and staging/unstaging continue to use Git. The gix status reader never writes suggested index updates. See [the performance report](docs/performance.md) for compatibility coverage and rollout criteria.
 
 Built with [GPUI Kit](https://gpui-kit.com/) and [Commit Mono](https://commitmono.com/). See [plan.md](plan.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
@@ -127,3 +141,13 @@ Existing preferences are migrated from `~/Library/Application Support/Differ/sta
 Packaged builds check for updates quietly after startup. **Check for Updates…** is also available in the Diffy menu and ⌘P command palette. Updates download and verify only after clicking **Update and Restart**. Git writes finish before installation; projects and preferences survive the restart. Development binaries cannot install updates.
 
 See [RELEASING.md](RELEASING.md) for packaging, local signing, key backups, draft releases, and update verification.
+
+## Performance checks
+
+```sh
+cargo bench --locked --bench performance
+DIFFY_BENCH_REPORT=1 cargo bench --locked --bench performance
+DIFFY_TRACE_PATH="$PWD/target/diffy-trace.json" cargo run --locked -- /path/to/repository
+```
+
+The benchmark compares eager loading, Git metadata refresh, selected-file parsing, cached navigation, and the complete gix metadata adapter on disposable repositories. `DIFFY_BENCH_ONLY=metadata` (or `eager`, `selected_preview`, `cached_navigation`, `gix_metadata`, `gix_status_prototype`) isolates a case for memory measurements. The gix adapter benchmark fails if it falls back to Git; the earlier filename-only prototype remains a separate comparison. Traces are opt in, stay local, and contain timing spans without paths or source contents. Open them in Perfetto. gix is a runtime dependency; Criterion remains development-only.

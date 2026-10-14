@@ -1,6 +1,6 @@
 # Diffy landing page
 
-Astro static site for https://diffy.hitslop.com. The page uses Commit Mono and existing Diffy artwork, with one small bundled script for the cursor-following SVG eye. It has no tracking or payment verification. Touch devices, reduced-motion users, and JavaScript failures keep the original static mascot. Animation stops when settled or offscreen.
+Astro static site for https://diffy.hitslop.com. The page uses Commit Mono and a compact, responsive hero banner from `src/assets/hero.png`, with one small bundled script for the cursor-following SVG eye. It has no tracking or payment verification. Touch devices, reduced-motion users, and JavaScript failures keep the original static artwork. Animation stops when settled or offscreen.
 
 ```sh
 cd site
@@ -39,3 +39,5 @@ Associate `diffy.hitslop.com` in the Pages project's custom domains, then point 
 `public/_redirects` sends `/download` to the fixed-name `Diffy-macos-aarch64.dmg` in GitHub's latest release. The release script creates an identical copy of the signed and notarized versioned DMG. Upload it with every release; never point the website at an unsigned build.
 
 The bundled web font uses the same Commit Mono v143 font as Diffy, under the included SIL Open Font License. The screenshot is stored losslessly as WebP. The mascot and social preview derive from existing project assets.
+
+The screenshot serves 480/960/1440px variants through `srcset`; the original 1920px image remains the full-resolution fallback and zoom link. Pointer motion is coalesced so the eye controller reads geometry at most once per animation frame. Website CI builds with and without a checkout URL and does not deploy automatically.

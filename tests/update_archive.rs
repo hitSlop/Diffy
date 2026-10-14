@@ -44,17 +44,17 @@ fn real_signatures_accept_exact_bytes_and_reject_corruption() {
 
 #[test]
 #[cfg(target_os = "macos")]
+#[ignore = "requires a signed release archive; run explicitly during release verification"]
 fn signed_app_archive_installs_and_relaunches_an_isolated_bundle() {
-    let Some(archive) = std::env::var_os("DIFFY_TEST_UPDATE_ARCHIVE").map(PathBuf::from) else {
-        eprintln!(
-            "Signed bundle exercise requires DIFFY_TEST_UPDATE_ARCHIVE and DIFFY_TEST_UPDATE_SIGNATURE."
-        );
-        return;
-    };
+    let archive = std::env::var_os("DIFFY_TEST_UPDATE_ARCHIVE")
+        .map(PathBuf::from)
+        .expect("DIFFY_TEST_UPDATE_ARCHIVE is required for release verification");
     let signature = fs::read_to_string(
         std::env::var_os("DIFFY_TEST_UPDATE_SIGNATURE").expect("signature path required"),
     )
     .unwrap();
+    let expected_version = std::env::var("DIFFY_TEST_UPDATE_VERSION")
+        .unwrap_or_else(|_| diffy::updates::VERSION.to_owned());
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -112,7 +112,8 @@ fn signed_app_archive_installs_and_relaunches_an_isolated_bundle() {
     let preferences = root.join("preferences/state.json");
     fs::create_dir_all(preferences.parent().unwrap()).unwrap();
     fs::write(&preferences, b"preserve these preferences").unwrap();
-    let package = update(diffy::updates::PUBLIC_KEY, &signature, current.clone());
+    let mut package = update(diffy::updates::PUBLIC_KEY, &signature, current.clone());
+    package.version = expected_version.clone();
     let bytes = fs::read(&archive).unwrap();
     diffy::updates::verify_archive(&bytes, diffy::updates::PUBLIC_KEY, &signature)
         .expect("Verify the real release archive");
@@ -139,7 +140,7 @@ fn signed_app_archive_installs_and_relaunches_an_isolated_bundle() {
     assert!(launch.status.success());
     assert_eq!(
         String::from_utf8(launch.stdout).unwrap().trim(),
-        format!("Diffy {}", diffy::updates::VERSION)
+        format!("Diffy {expected_version}")
     );
     assert_eq!(
         fs::read(&preferences).unwrap(),

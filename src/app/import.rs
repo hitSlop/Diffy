@@ -524,6 +524,15 @@ impl Diffy {
     pub(super) fn receive_discovery(&mut self, snapshot: Snapshot, cx: &mut Context<Self>) {
         let snapshot = Arc::new(snapshot);
         self.import.loading = false;
+        if *self.import.snapshot == *snapshot {
+            if let Some(picker) = &self.import.picker {
+                picker.update(cx, |p, cx| {
+                    p.loading = false;
+                    cx.notify();
+                });
+            }
+            return;
+        }
         self.import.snapshot = snapshot.clone();
         // While choosing, defer auto-add so existing checkbox rows do not change underneath the user.
         if self.import.picker.is_none() {
@@ -554,6 +563,7 @@ impl Diffy {
             let mut scanner = discovery::Scanner::default();
             let mut watch = discovery::MetadataWatch::default();
             let mut next = Instant::now();
+            let mut dirty_since = None;
             loop {
                 let Ok((enabled, requested, picker)) = owner.update(cx, |this, _| {
                     let requested = std::mem::take(&mut this.import.requested);
@@ -565,8 +575,13 @@ impl Diffy {
                 }) else {
                     break;
                 };
-                let dirty = watch.dirty.swap(false, Ordering::Relaxed);
+                if watch.dirty.swap(false, Ordering::Relaxed) && dirty_since.is_none() {
+                    dirty_since = Some(Instant::now());
+                }
+                let dirty = dirty_since
+                    .is_some_and(|time: Instant| time.elapsed() >= Duration::from_secs(2));
                 if requested || (enabled.iter().any(|v| *v) && (dirty || Instant::now() >= next)) {
+                    dirty_since = None;
                     let scan_sources = if picker { [true; 3] } else { enabled };
                     let locations = locations.clone();
                     let cancelled = cancelled.clone();

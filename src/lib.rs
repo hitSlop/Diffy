@@ -4,6 +4,8 @@ pub mod demo;
 pub mod discovery;
 pub mod fonts;
 mod keyboard;
+pub mod profiling;
+pub mod project_apps;
 pub mod repository;
 pub mod state;
 pub mod updates;

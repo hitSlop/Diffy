@@ -11,8 +11,10 @@ use std::{
 
 use gpui_kit::SharedString;
 use gpui_kit::component::diff::{DiffFile, DiffFileStatus};
+mod metadata;
+pub use metadata::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChangeGroup {
     Staged,
     Changes,
@@ -121,6 +123,22 @@ fn git_launch() -> Result<&'static GitLaunch, String> {
         .map(|p| p.join(name))
         .find(|p| p.is_file())
         .ok_or("Git wasn't found. Install Git, then reopen Diffy.")?;
+    #[cfg(target_os = "macos")]
+    let program = if program == Path::new("/usr/bin/git") {
+        // Apple's /usr/bin/git dispatches through the selected developer tools.
+        // Resolve that tool once instead of paying for the dispatcher on every read.
+        Command::new("/usr/bin/xcrun")
+            .args(["--find", "git"])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|path| PathBuf::from(path.trim_end_matches('\n')))
+            .filter(|path| path.is_file())
+            .unwrap_or(program)
+    } else {
+        program
+    };
     let launch = GitLaunch {
         program,
         path: std::env::join_paths(paths).ok(),
@@ -138,11 +156,17 @@ fn git_command() -> Result<Command, String> {
 }
 
 pub(crate) fn git(path: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    let _span = tracing::info_span!("git_read").entered();
     let output = git_command()?
         .args([
             "--no-pager",
             "--no-optional-locks",
             "--literal-pathspecs",
+            // `git diff` can refresh a stat-only index even with optional
+            // locks disabled (notably after EOL normalization). Reads must
+            // preserve both index contents and its timestamp.
+            "-c",
+            "diff.autoRefreshIndex=false",
             "-C",
         ])
         .arg(path)
@@ -408,28 +432,11 @@ pub fn set_staged(root: &Path, file: &DiffFile, staged: bool) -> Result<(), Stri
 
 /// Mutates all supplied paths in one Git invocation, including both sides of renames.
 pub fn set_files_staged(root: &Path, files: &[DiffFile], staged: bool) -> Result<(), String> {
-    if files.is_empty() {
-        return Ok(());
-    }
-    let mut paths = Vec::new();
-    for file in files {
-        paths.push(file.path().as_str());
-        if file.status() == DiffFileStatus::Renamed {
-            paths.extend(file.original_path().map(|p| p.as_str()));
-            paths.extend(file.modified_path().map(|p| p.as_str()));
-        }
-    }
-    paths.sort_unstable();
-    paths.dedup();
-    let mut args = if staged {
-        vec!["add", "--all", "--"]
-    } else if git(root, &["rev-parse", "--verify", "HEAD"]).is_ok() {
-        vec!["restore", "--staged", "--"]
-    } else {
-        vec!["rm", "--cached", "-f", "--"]
-    };
-    args.extend(paths);
-    git(root, &args).map(|_| ())
+    let entries = files
+        .iter()
+        .map(|f| ChangedFile::from_diff(f, 0))
+        .collect::<Vec<_>>();
+    set_entries_staged(root, &entries, staged)
 }
 
 // Git's C-style path quoting preserves whitespace, quotes, and Unicode bytes.
@@ -851,5 +858,145 @@ mod tests {
             "50k source lines + 1000 files: full parse p50={:.1}ms p90={:.1}ms; unchanged refresh p50={:.1}ms p90={:.1}ms",
             full[4], full[8], unchanged[4], unchanged[8]
         );
+    }
+
+    #[test]
+    fn metadata_and_lazy_previews_preserve_scopes_and_index() {
+        let repo = TestRepository::new();
+        repo.write("one.rs", "base\n");
+        repo.write("old.rs", "rename unchanged content\n");
+        repo.commit();
+        repo.write("one.rs", "staged\n");
+        git(&repo.0, &["add", "one.rs"]).unwrap();
+        repo.write("one.rs", "working\n");
+        git(&repo.0, &["mv", "old.rs", "new.rs"]).unwrap();
+        repo.write(":(glob)* unusual\nname.rs", "new\n");
+        std::fs::write(repo.0.join("binary.dat"), b"\0binary").unwrap();
+        let before = std::fs::read(repo.0.join(".git/index")).unwrap();
+        let listing = load_metadata(&repo.0).unwrap();
+        let eager = load(&repo.0).unwrap();
+        for (group, eager) in [
+            (ChangeGroup::Staged, eager.staged),
+            (ChangeGroup::Changes, eager.changes),
+        ] {
+            let entries = &listing.groups[group.index()];
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|f| (&f.path, f.status))
+                    .collect::<Vec<_>>(),
+                eager
+                    .files
+                    .iter()
+                    .map(|f| (f.path(), f.status()))
+                    .collect::<Vec<_>>()
+            );
+            for entry in entries {
+                let preview = load_preview(&listing.root, group, entry).unwrap();
+                let expected = eager
+                    .files
+                    .iter()
+                    .find(|f| f.path() == entry.path())
+                    .unwrap();
+                assert_eq!(
+                    (
+                        preview.file.additions(),
+                        preview.file.deletions(),
+                        preview.file.is_binary()
+                    ),
+                    (
+                        expected.additions(),
+                        expected.deletions(),
+                        expected.is_binary()
+                    )
+                );
+            }
+        }
+        assert_eq!(before, std::fs::read(repo.0.join(".git/index")).unwrap());
+        set_entries_staged(&repo.0, &listing.groups[1], true).unwrap();
+        assert!(load_metadata(&repo.0).unwrap().groups[1].is_empty());
+    }
+
+    #[test]
+    fn conflicts_are_readable_and_never_staged_with_other_files() {
+        let repo = TestRepository::new();
+        repo.write("conflict.txt", "base\n");
+        repo.write("other.txt", "base\n");
+        repo.commit();
+        git(&repo.0, &["checkout", "-b", "side"]).unwrap();
+        repo.write("conflict.txt", "side\n");
+        repo.commit();
+        git(&repo.0, &["checkout", "main"]).unwrap();
+        repo.write("conflict.txt", "main\n");
+        repo.commit();
+        assert!(
+            git(
+                &repo.0,
+                &[
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "merge",
+                    "side"
+                ]
+            )
+            .is_err()
+        );
+        repo.write("other.txt", "ordinary change\n");
+        let before = git(&repo.0, &["ls-files", "--unmerged", "-z"]).unwrap();
+        let snapshot = load_metadata(&repo.0).unwrap();
+        assert!(snapshot.groups[0].is_empty());
+        let conflict = snapshot.groups[1].iter().find(|f| !f.stageable()).unwrap();
+        assert_eq!(conflict.path.as_str(), "conflict.txt");
+        assert_eq!(
+            load_preview(&repo.0, ChangeGroup::Changes, conflict)
+                .unwrap()
+                .file
+                .path(),
+            conflict.path()
+        );
+        set_entries_staged(&repo.0, &snapshot.groups[1], true).unwrap();
+        assert_eq!(
+            git(&repo.0, &["ls-files", "--unmerged", "-z"]).unwrap(),
+            before
+        );
+        assert_eq!(
+            load_metadata(&repo.0).unwrap().groups[0][0].path.as_str(),
+            "other.txt"
+        );
+    }
+
+    #[test]
+    fn metadata_revisions_follow_disk_edits_and_unborn_entries() {
+        let repo = TestRepository::new();
+        repo.write("a.txt", "first\n");
+        let first = load_metadata(&repo.0).unwrap();
+        repo.write("a.txt", "second longer\n");
+        let second = load_metadata(&repo.0).unwrap();
+        assert_ne!(first.groups[1][0].revision, second.groups[1][0].revision);
+        set_entries_staged(&repo.0, &second.groups[1], true).unwrap();
+        let staged = load_metadata(&repo.0).unwrap();
+        set_entries_staged(&repo.0, &staged.groups[0], false).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(repo.0.join("a.txt")).unwrap(),
+            "second longer\n"
+        );
+        assert!(load_metadata(&repo.0).unwrap().groups[0].is_empty());
+    }
+
+    #[test]
+    fn cached_location_is_revalidated_when_git_directory_disappears() {
+        let parent = TestRepository::new();
+        parent.write("outer.txt", "base\n");
+        parent.commit();
+        let nested = parent.0.join("nested");
+        std::fs::create_dir(&nested).unwrap();
+        git(&nested, &["init", "--initial-branch=main"]).unwrap();
+        std::fs::write(nested.join("inner.txt"), "inner\n").unwrap();
+        let initial = load_metadata(&nested).unwrap();
+        std::fs::rename(nested.join(".git"), parent.0.join("git-backup")).unwrap();
+        let refreshed = load_metadata_with_context(&initial.root, Some(&initial.context)).unwrap();
+        assert_eq!(refreshed.root, std::fs::canonicalize(&parent.0).unwrap());
     }
 }

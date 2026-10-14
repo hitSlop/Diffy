@@ -90,7 +90,11 @@ impl Diffy {
     pub(super) fn render_palette(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.projects.get(self.active);
         let has_files = p.is_some_and(|p| !p.view().files.is_empty());
-        let mutable = p.is_some_and(|p| p.path.is_some() && !p.loading && has_files);
+        let mutable = p.is_some_and(|p| {
+            p.path.is_some()
+                && !p.loading
+                && p.view().selected_entry().is_some_and(|e| e.stageable())
+        });
         let projects = CommandGroup::new()
             .label("Projects")
             .items(self.projects.iter().map(|p| {
@@ -160,10 +164,51 @@ impl Diffy {
                     "Unstage all files"
                 },
                 Box::new(StageAll),
-                !mutable,
+                !p.is_some_and(|p| {
+                    p.path.is_some() && !p.loading && p.view().files.iter().any(|e| e.stageable())
+                }),
             ),
             item("Focus diff", Box::new(FocusDiff), !has_files),
             item("Find file", Box::new(FocusFileSearch), p.is_none()),
+            item(
+                "Copy relative path",
+                Box::new(super::CopyRelativePath),
+                !has_files,
+            ),
+            item(
+                "Copy absolute path",
+                Box::new(super::CopyAbsolutePath),
+                !p.is_some_and(|p| p.path.is_some() && p.view().selected_entry().is_some()),
+            ),
+            item(
+                "Reveal in Finder",
+                Box::new(super::RevealFile),
+                !p.is_some_and(|p| p.path.is_some() && p.view().selected_entry().is_some()),
+            ),
+            item(
+                "Increase diff font size",
+                Box::new(super::ZoomIn),
+                self.reader.font_size >= 24.,
+            ),
+            item(
+                "Decrease diff font size",
+                Box::new(super::ZoomOut),
+                self.reader.font_size <= 10.,
+            ),
+            item(
+                "Reset diff font size",
+                Box::new(super::ResetZoom),
+                self.reader.font_size == 13.,
+            ),
+            item(
+                if self.reader.wrap {
+                    "Turn line wrapping off"
+                } else {
+                    "Turn line wrapping on"
+                },
+                Box::new(super::ToggleWrap),
+                false,
+            ),
             item(
                 "Remove from Diffy",
                 Box::new(RemoveCurrentProject),

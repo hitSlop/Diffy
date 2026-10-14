@@ -42,6 +42,7 @@ pub enum PopupMenuItem {
         disabled: bool,
         checked: bool,
         is_link: bool,
+        danger: bool,
         action: Option<Box<dyn Action>>,
         // For link item
         handler: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
@@ -76,6 +77,7 @@ impl PopupMenuItem {
             checked: false,
             action: None,
             is_link: false,
+            danger: false,
             handler: None,
         }
     }
@@ -135,6 +137,15 @@ impl PopupMenuItem {
                 *i = Some(icon.into());
             }
             _ => {}
+        }
+        self
+    }
+
+    /// Use the theme's danger color for a standard menu item's label, including
+    /// while hovered or selected. Disabled items keep their muted appearance.
+    pub fn danger(mut self) -> Self {
+        if let Self::Item { danger, .. } = &mut self {
+            *danger = true;
         }
         self
     }
@@ -220,6 +231,7 @@ impl PopupMenuItem {
             checked: false,
             action: None,
             is_link: true,
+            danger: false,
             handler: Some(Rc::new(move |_, _, cx| cx.open_url(&href))),
         }
     }
@@ -1317,6 +1329,7 @@ impl PopupMenu {
                 action,
                 disabled,
                 is_link,
+                danger,
                 ..
             } => {
                 let show_link_icon = *is_link && self.external_link_icon;
@@ -1329,6 +1342,7 @@ impl PopupMenu {
                     )
                 })
                 .disabled(*disabled)
+                .danger(*danger)
                 .h(item_height)
                 .gap_x_1()
                 .children(Self::render_icon(

@@ -6,6 +6,7 @@ use gpui_kit::component::TitleBar;
 use gpui_kit::{AppContext as _, WindowBounds, WindowOptions, px, size};
 
 fn main() {
+    let _trace = diffy::profiling::init();
     let mut paths = Vec::new();
     let mut check = false;
     let mut demo_mode = false;
@@ -57,13 +58,25 @@ fn main() {
             }
         } else {
             for path in paths {
-                match repository::load(&path) {
-                    Ok(snapshot) => println!(
-                        "{}: {} staged, {} changes",
-                        snapshot.root.display(),
-                        snapshot.staged.files.len(),
-                        snapshot.changes.files.len()
-                    ),
+                match repository::load_metadata(&path) {
+                    Ok(snapshot) => {
+                        println!(
+                            "{}: {} staged, {} changes",
+                            snapshot.root.display(),
+                            snapshot.groups[0].len(),
+                            snapshot.groups[1].len()
+                        );
+                        if repository::MetadataBackend::configured()
+                            == repository::MetadataBackend::Gix
+                        {
+                            match snapshot.fallback_reason {
+                                Some(reason) => {
+                                    println!("  metadata backend: Git (fallback: {reason})")
+                                }
+                                None => println!("  metadata backend: gix"),
+                            }
+                        }
+                    }
                     Err(error) => {
                         eprintln!("{error}");
                         std::process::exit(1);

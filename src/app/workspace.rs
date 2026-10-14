@@ -24,6 +24,7 @@ use gpui_kit::component::diff::DiffHunkSeparator;
 use gpui_kit::component::diff::DiffMode;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::toolbar::Toolbar;
 use gpui_kit::component::v_flex;
 use gpui_kit::div;
@@ -204,7 +205,15 @@ impl Diffy {
                             .min_w_0()
                             .truncate()
                             .text_size(px(13.))
-                            .child(view.selected.clone().unwrap_or_default()),
+                            .child(view.selected.clone().unwrap_or_default())
+                            .context_menu({
+                                let id = p.id;
+                                let path = view.selected.clone().unwrap_or_default();
+                                let local = p.path.is_some();
+                                move |menu, _, _| {
+                                    super::reader::file_menu(menu, id, path.as_str(), local)
+                                }
+                            }),
                     )
                     .children(view.selected_file().map(|f| {
                         h_flex()
@@ -247,7 +256,12 @@ impl Diffy {
                                         .group_hover("preview-header", |button| button.visible())
                                 },
                             )
-                            .disabled(empty || p.path.is_none() || p.loading)
+                            .disabled(
+                                empty
+                                    || p.path.is_none()
+                                    || p.loading
+                                    || view.selected_entry().is_some_and(|e| !e.stageable()),
+                            )
                             .tooltip(if p.path.is_none() {
                                 "Open a repository to stage files".to_owned()
                             } else {
@@ -281,7 +295,42 @@ impl Diffy {
                             .on_click(cx.listener(|this, _, _, cx| this.refresh(cx))),
                     )
             }))
-            .child(if empty {
+            .children(view.preview_error.as_ref().map(|error| {
+                h_flex()
+                    .px_3()
+                    .py_2()
+                    .gap_2()
+                    .child(div().text_color(cx.theme().danger).child(error.clone()))
+                    .child(
+                        Button::new("retry-preview")
+                            .ghost()
+                            .label("Retry")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.ensure_preview(cx);
+                            })),
+                    )
+            }))
+            .children(view.selected_entry().filter(|e| !e.stageable()).map(|_| {
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_color(cx.theme().danger)
+                    .child("Unmerged file · resolve and stage outside Diffy")
+            }))
+            .child(if !empty && view.preview.is_none() {
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(if view.preview_error.is_some() && !view.preview_loading {
+                        "Preview unavailable"
+                    } else {
+                        "Loading preview…"
+                    })
+                    .into_any_element()
+            } else if empty {
                 v_flex()
                     .flex_1()
                     .items_center()
@@ -309,7 +358,7 @@ impl Diffy {
                             .size_full()
                             .border_0()
                             .header_visible(false)
-                            .soft_wrap(true)
+                            .soft_wrap(self.reader.wrap)
                             .split_ratio(0.4)
                             .hunk_separator(DiffHunkSeparator::Simple),
                     )

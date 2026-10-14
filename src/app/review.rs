@@ -1,5 +1,5 @@
 use super::Diffy;
-use crate::repository::GroupSnapshot;
+use crate::repository::{ChangedFile, GroupSnapshot, Preview};
 use gpui_kit::AppContext as _;
 use gpui_kit::Context;
 use gpui_kit::Entity;
@@ -78,11 +78,17 @@ impl SidebarRow {
 }
 
 pub(super) struct ReviewView {
-    /// Hash of the raw patch. The parsed files already hold the text, so the
-    /// patch string itself is not kept around for the next equality check.
-    pub(super) fingerprint: Option<u64>,
+    loaded: bool,
     pub(super) indices: HashMap<SharedString, usize>,
-    pub(super) files: Arc<Vec<DiffFile>>,
+    pub(super) files: Arc<Vec<ChangedFile>>,
+    pub(super) preview: Option<Preview>,
+    pub(super) preview_revision: Option<u64>,
+    pub(super) preview_loading: bool,
+    pub(super) preview_error: Option<String>,
+    pub(super) preview_generation: u64,
+    pub(super) preview_task: Option<gpui_kit::Task<()>>,
+    reading_position: Option<gpui_kit::component::diff::DiffReadingPosition>,
+    demos: HashMap<SharedString, Preview>,
     pub(super) rows: Arc<Vec<FileRow>>,
     pub(super) sidebar: Arc<Vec<SidebarRow>>,
     /// Sidebar row of each visible path. Arrow keys and scrolling use this,
@@ -94,7 +100,6 @@ pub(super) struct ReviewView {
     pub(super) search: Option<Entity<InputState>>,
     matcher: Matcher,
     match_buf: Vec<char>,
-    pub(super) revisions: HashMap<SharedString, u64>,
     pub(super) selected: Option<SharedString>,
     pub(super) diff: gpui_kit::Entity<DiffState>,
     pub(super) scroll: VirtualListScrollHandle,
@@ -105,9 +110,17 @@ pub(super) struct ReviewView {
 impl ReviewView {
     pub(super) fn new(cx: &mut Context<Diffy>) -> Self {
         Self {
-            fingerprint: None,
+            loaded: false,
             indices: HashMap::new(),
             files: Arc::default(),
+            preview: None,
+            preview_revision: None,
+            preview_loading: false,
+            preview_error: None,
+            preview_generation: 0,
+            preview_task: None,
+            reading_position: None,
+            demos: HashMap::new(),
             rows: Arc::default(),
             sidebar: Arc::default(),
             visual: HashMap::new(),
@@ -116,7 +129,6 @@ impl ReviewView {
             search: None,
             matcher: Matcher::new(Config::DEFAULT.match_paths()),
             match_buf: Vec::new(),
-            revisions: HashMap::new(),
             selected: None,
             diff: cx.new(|cx| {
                 DiffState::new([], cx)
@@ -131,27 +143,27 @@ impl ReviewView {
     }
 
     pub(super) fn loaded(&self) -> bool {
-        self.fingerprint.is_some()
+        self.loaded
     }
 
-    pub(super) fn selected_file(&self) -> Option<&DiffFile> {
+    pub(super) fn selected_entry(&self) -> Option<&ChangedFile> {
         self.selected
             .as_ref()
             .and_then(|path| self.indices.get(path))
             .and_then(|ix| self.files.get(*ix))
     }
-
+    pub(super) fn selected_file(&self) -> Option<&DiffFile> {
+        self.preview
+            .as_ref()
+            .filter(|preview| self.selected.as_ref() == Some(preview.file.path()))
+            .map(|p| &p.file)
+    }
     pub(super) fn select(&mut self, path: SharedString, cx: &mut Context<Diffy>) {
         if self.selected.as_ref() == Some(&path) {
             return;
         }
         self.selected = Some(path);
-        self.show_selected(cx);
-    }
-
-    fn show_selected(&self, cx: &mut Context<Diffy>) {
-        let file = self.selected_file().cloned();
-        self.diff.update(cx, |diff, cx| diff.set_files(file, cx));
+        self.reset_selection(cx);
         if let Some(ix) = self
             .selected
             .as_ref()
@@ -159,6 +171,69 @@ impl ReviewView {
             .copied()
         {
             self.scroll.scroll_to_item(ix, ScrollStrategy::Nearest);
+        }
+    }
+    fn reset_selection(&mut self, cx: &mut Context<Diffy>) {
+        self.reading_position = None;
+        self.preview_generation += 1;
+        self.preview_task = None;
+        self.preview_loading = false;
+        self.preview_error = None;
+        self.preview_revision = None;
+        self.preview = self
+            .selected
+            .as_ref()
+            .and_then(|p| self.demos.get(p))
+            .cloned();
+        if self.preview.is_some() {
+            self.preview_revision = self.selected_entry().map(|e| e.revision);
+        }
+        let file = self.selected_file().cloned();
+        self.diff.update(cx, |diff, cx| diff.set_files(file, cx));
+    }
+    pub(super) fn install_preview(
+        &mut self,
+        preview: Preview,
+        revision: u64,
+        cx: &mut Context<Diffy>,
+    ) {
+        let same_path = self
+            .preview
+            .as_ref()
+            .is_some_and(|old| old.file.path() == preview.file.path());
+        let unchanged = same_path
+            && self
+                .preview
+                .as_ref()
+                .is_some_and(|old| old.fingerprint == preview.fingerprint);
+        if !unchanged {
+            let file = preview.file.clone();
+            let position = self.reading_position.take();
+            self.diff.update(cx, |diff, cx| {
+                if same_path {
+                    diff.set_files_preserving_position(Some(file), cx);
+                } else {
+                    diff.set_files(Some(file), cx);
+                }
+                if let Some(position) = position {
+                    diff.restore_reading_position(position, cx);
+                }
+            });
+        }
+        self.preview = Some(preview);
+        self.preview_revision = Some(revision);
+        self.preview_loading = false;
+        self.preview_error = None;
+    }
+
+    pub(super) fn suspend(&mut self, cx: &mut Context<Diffy>) {
+        self.preview_generation += 1;
+        self.preview_task = None;
+        self.preview_loading = false;
+        if self.preview.take().is_some() {
+            self.reading_position = Some(self.diff.read(cx).reading_position());
+            self.preview_revision = None;
+            self.diff.update(cx, |diff, cx| diff.set_files(None, cx));
         }
     }
 
@@ -241,43 +316,59 @@ impl ReviewView {
         project_id: u64,
         cx: &mut Context<Diffy>,
     ) {
-        if self.fingerprint == Some(snapshot.fingerprint) {
-            if self.selected.is_some() && self.selected_file().is_none() {
-                self.selected = None;
-                self.show_selected(cx);
-            }
-            return;
-        }
+        let entries = snapshot
+            .files
+            .iter()
+            .map(|file| {
+                let revision = snapshot.revisions[file.path()];
+                self.demos.insert(
+                    file.path().clone(),
+                    Preview {
+                        file: file.clone(),
+                        fingerprint: revision,
+                        bytes: file.estimated_size_bytes(),
+                    },
+                );
+                ChangedFile::from_diff(file, revision)
+            })
+            .collect();
+        self.install_metadata(entries, project_id, cx);
+    }
+    pub(super) fn install_metadata(
+        &mut self,
+        files: Vec<ChangedFile>,
+        project_id: u64,
+        cx: &mut Context<Diffy>,
+    ) {
         let previous_selected = self.selected.clone();
-        let previous_revision = self
-            .selected
-            .as_ref()
-            .and_then(|path| self.revisions.get(path))
-            .copied();
+        let previous_revision = self.selected_entry().map(|e| e.revision);
         let ordinal = self
             .selected
             .as_ref()
             .and_then(|path| self.indices.get(path))
             .copied()
             .unwrap_or(0);
-        self.fingerprint = Some(snapshot.fingerprint);
-        self.revisions = snapshot.revisions;
-        self.rows = Arc::new(
-            snapshot
-                .files
+        let paths_changed = self.files.len() != files.len()
+            || self.files.iter().zip(&files).any(|(a, b)| a.path != b.path);
+        self.loaded = true;
+        if paths_changed {
+            self.rows = Arc::new(
+                files
+                    .iter()
+                    .enumerate()
+                    .map(|(ix, file)| FileRow::from_path(file.path(), project_id, ix))
+                    .collect(),
+            );
+            self.indices = files
                 .iter()
                 .enumerate()
-                .map(|(ix, file)| FileRow::from_path(file.path(), project_id, ix))
-                .collect(),
-        );
-        self.indices = snapshot
-            .files
-            .iter()
-            .enumerate()
-            .map(|(ix, file)| (file.path().clone(), ix))
-            .collect();
-        self.files = Arc::new(snapshot.files);
-        self.rebuild_sidebar();
+                .map(|(ix, file)| (file.path().clone(), ix))
+                .collect();
+        }
+        self.files = Arc::new(files);
+        if paths_changed {
+            self.rebuild_sidebar();
+        }
         self.selected = self
             .selected
             .take()
@@ -287,19 +378,14 @@ impl ReviewView {
                     .get(ordinal.min(self.files.len().saturating_sub(1)))
                     .map(|f| f.path().clone())
             });
-        let revision = self
-            .selected
-            .as_ref()
-            .and_then(|path| self.revisions.get(path))
-            .copied();
-        if self.selected != previous_selected || revision != previous_revision {
-            if self.selected == previous_selected {
-                let file = self.selected_file().cloned();
-                self.diff
-                    .update(cx, |diff, cx| diff.set_files_preserving_position(file, cx));
-            } else {
-                self.show_selected(cx);
-            }
+        if self.selected != previous_selected || !self.demos.is_empty() {
+            self.reset_selection(cx);
+        } else if self.selected_entry().map(|e| e.revision) != previous_revision {
+            self.preview_generation += 1;
+            self.preview_task = None;
+            self.preview_loading = false;
+            self.preview_revision = None;
+            self.preview_error = None;
         }
     }
 }
