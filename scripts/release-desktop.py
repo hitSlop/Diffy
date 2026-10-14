@@ -63,7 +63,7 @@ def main():
     configuration = ROOT / "target/packaging" / f"{args.platform}.json"
     configuration.parent.mkdir(parents=True, exist_ok=True)
     configuration.write_text(json.dumps(config, indent=2) + "\n")
-    run([packager, "--release", "--config", configuration], env)
+    run([packager, "--release", "--config", json.dumps(config)], env)
     suffix = ".exe" if args.platform == "windows" else ".AppImage"
     packages = list(out.glob(f"*{suffix}"))
     if len(packages) != 1:

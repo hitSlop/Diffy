@@ -12,6 +12,11 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        // GPUI startup overflows MSVC's default stack in debug builds. Zed
+        // uses the same 8 MiB reserve for its Windows GPUI executable.
+        println!("cargo:rustc-link-arg=/STACK:8388608");
+    }
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let sizes = [16u32, 32, 128, 256];
     let images: Vec<_> = sizes
