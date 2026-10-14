@@ -73,6 +73,9 @@ impl Diffy {
                 if this.projects[ix].generation != generation {
                     return;
                 }
+                if let Ok(snapshot) = &result.0 {
+                    this.import.preferences.excluded.remove(&snapshot.root);
+                }
                 if let Ok(snapshot) = &result.0
                     && let Some(existing) = this
                         .projects

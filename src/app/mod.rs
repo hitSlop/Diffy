@@ -32,6 +32,7 @@ use gpui_kit::{Action, AsKeystroke as _, KeyBinding, KeyContext, Pixels};
 use std::path::PathBuf;
 
 mod files;
+mod import;
 mod notice;
 mod palette;
 mod rail;
@@ -45,6 +46,7 @@ gpui_kit::actions!(
     diffy,
     [
         OpenProject,
+        ImportProjects,
         InstallCli,
         Refresh,
         NextProject,
@@ -101,6 +103,7 @@ pub fn init(cx: &mut App) {
         ]),
         gpui_kit::Menu::new("File").items([
             gpui_kit::MenuItem::action("Open Repository…", OpenProject),
+            gpui_kit::MenuItem::action("Import Projects…", ImportProjects),
             #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Install terminal command…", InstallCli),
             gpui_kit::MenuItem::action("Refresh Repository", Refresh),
@@ -128,6 +131,7 @@ pub fn init(cx: &mut App) {
 }
 
 pub struct Diffy {
+    import: import::Runtime,
     projects: Vec<session::Project>,
     active: usize,
     focus: FocusHandle,
@@ -233,6 +237,7 @@ impl Render for Diffy {
             .on_action(cx.listener(|this, a: &EditProject, w, cx| this.open_settings(a.id, w, cx)))
             .on_action(cx.listener(|this, _: &StageAll, _, cx| this.stage_all(cx)))
             .on_action(cx.listener(|this, _: &OpenProject, w, cx| this.open_project(w, cx)))
+            .on_action(cx.listener(|this, _: &ImportProjects, w, cx| this.open_import(w, cx)))
             .on_action(cx.listener(|this, _: &InstallCli, w, cx| this.install_cli(w, cx)))
             .on_action(cx.listener(|this, _: &OpenCommandPalette, w, cx| this.open_palette(w, cx)))
             .on_action(cx.listener(|this, a: &SelectProject, w, cx| {

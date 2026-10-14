@@ -2,6 +2,7 @@ use super::About;
 use super::CheckForUpdates;
 use super::Diffy;
 use super::FocusDiff;
+use super::ImportProjects;
 use super::InstallCli;
 use super::InstallUpdate;
 use super::NextChange;
@@ -47,7 +48,7 @@ use gpui_kit::rgb;
 
 impl Diffy {
     pub(super) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.settings.is_some() {
+        if self.settings.is_some() || self.import.picker.is_some() {
             return;
         }
         if self.palette_open {
@@ -106,6 +107,11 @@ impl Diffy {
         };
         let commands = CommandGroup::new().label("Commands").items([
             item("Open repository", Box::new(OpenProject), false),
+            item(
+                "Import projects from Herdr / Codex / Claude",
+                Box::new(ImportProjects),
+                false,
+            ),
             item(
                 "Install terminal command",
                 Box::new(InstallCli),

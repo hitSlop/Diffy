@@ -53,13 +53,13 @@ Notarization reports stay local. Never upload `.release-secrets`, VISIONCAL cred
 Commit the validated source, push `main`, and tag the exact release commit. Create a draft rather than publishing:
 
 ```sh
-git tag v0.1.0
-git push origin main v0.1.0
-gh release create v0.1.0 --repo hitSlop/diffy --draft --verify-tag \
-  --title 'Diffy v0.1.0' --notes-file packaging/release-notes.md \
-  dist/release/Diffy_0.1.0_aarch64.dmg \
-  dist/release/Diffy_0.1.0_aarch64.app.tar.gz \
-  dist/release/Diffy_0.1.0_aarch64.app.tar.gz.sig \
+git tag v0.2.0
+git push origin main v0.2.0
+gh release create v0.2.0 --repo hitSlop/diffy --draft --verify-tag \
+  --title 'Diffy v0.2.0' --notes-file packaging/release-notes.md \
+  dist/release/Diffy_0.2.0_aarch64.dmg \
+  dist/release/Diffy_0.2.0_aarch64.app.tar.gz \
+  dist/release/Diffy_0.2.0_aarch64.app.tar.gz.sig \
   dist/release/update-macos-aarch64.json dist/release/SHA256SUMS
 ```
 
@@ -70,8 +70,8 @@ The manifest archive URL points to its immutable version tag. The app checks `re
 The automated suite covers preference migration, update state transitions, Git write gating, transport validation, real signature verification, corrupted payloads, and existing application behavior. To exercise the real app archive on isolated bundle copies:
 
 ```sh
-DIFFY_TEST_UPDATE_ARCHIVE="$PWD/dist/release/Diffy_0.1.0_aarch64.app.tar.gz" \
-DIFFY_TEST_UPDATE_SIGNATURE="$PWD/dist/release/Diffy_0.1.0_aarch64.app.tar.gz.sig" \
+DIFFY_TEST_UPDATE_ARCHIVE="$PWD/dist/release/Diffy_0.2.0_aarch64.app.tar.gz" \
+DIFFY_TEST_UPDATE_SIGNATURE="$PWD/dist/release/Diffy_0.2.0_aarch64.app.tar.gz.sig" \
 cargo test --locked --test update_archive -- --nocapture
 ```
 

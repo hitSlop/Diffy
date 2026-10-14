@@ -31,7 +31,15 @@ cargo run --locked -- /path/to/repository /path/to/another/repository
 cargo run --locked -- --demo
 ```
 
-Normal launch restores repositories; first launch shows an Open repository prompt. Use **+**, **⌘O**, or the command palette to open repositories. Nested folders resolve to their Git root and duplicate roots are merged. Missing repositories remain removable and show a recoverable error.
+Normal launch restores repositories. The project import picker appears once, including for existing users. Use **+**, **⌘O**, or the command palette to open repositories. Nested folders resolve to their Git root and duplicate roots are merged. Missing repositories remain removable and show a recoverable error.
+
+## Import projects
+
+Use **Import** at the bottom of the project rail, **File → Import Projects…**, or the command palette to find local Git projects from Herdr, Codex, and Claude Code. Select the projects to add; repositories already in Diffy are marked **Already added**. Unavailable directories are hidden. Results are newest-first within each source; non-Git folders are hidden too. Older sessions without a stored working directory are skipped.
+
+**Automatically add new projects** is opt in separately for each source. Removed and unselected projects stay excluded until you explicitly import or open them again. Imported repositories remain in Diffy when their Herdr workspace closes or agent history disappears. Importing preserves the project you are viewing.
+
+Discovery reads directory metadata only. It does not run agents, resume sessions, read terminal output, or access credentials. It honors `HERDR_SOCKET_PATH`, `XDG_CONFIG_HOME`, `CODEX_HOME`, and `CLAUDE_CONFIG_DIR`; otherwise it uses each tool's standard local directories. Herdr's saved sessions provide an offline fallback. Remote repositories need a local checkout in this release.
 
 `--demo` opens sample projects without reading or writing saved preferences. Demo staging is disabled.
 

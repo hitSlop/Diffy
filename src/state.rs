@@ -32,6 +32,8 @@ pub struct SavedState {
     pub active: Option<PathBuf>,
     #[serde(default)]
     pub sidebar_width: Option<f32>,
+    #[serde(default)]
+    pub discovery: crate::discovery::Preferences,
 }
 impl Default for SavedState {
     fn default() -> Self {
@@ -40,6 +42,7 @@ impl Default for SavedState {
             projects: Vec::new(),
             active: None,
             sidebar_width: None,
+            discovery: Default::default(),
         }
     }
 }

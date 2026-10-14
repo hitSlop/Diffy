@@ -247,6 +247,18 @@ impl Diffy {
                         ),
                     ),
             )
+            .child(
+                h_flex().h(px(56.)).flex_none().justify_center().child(
+                    Button::new("import-projects")
+                        .ghost()
+                        .w(px(60.))
+                        .h(px(30.))
+                        .label("Import")
+                        .tooltip("Import projects from Herdr, Codex, or Claude Code")
+                        .tooltip_placement(Placement::Right)
+                        .on_click(cx.listener(|this, _, window, cx| this.open_import(window, cx))),
+                ),
+            )
             .into_any_element()
     }
 }

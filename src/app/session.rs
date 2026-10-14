@@ -123,6 +123,7 @@ impl Diffy {
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let mut this = Self {
+            import: Default::default(),
             projects: Vec::new(),
             active: 0,
             focus,
@@ -151,6 +152,9 @@ impl Diffy {
                         return;
                     }
                     let _ = owner.update(cx, |this, cx| {
+                        if this.import.picker.is_some() {
+                            return;
+                        }
                         if this.settings.is_none() {
                             let mods = event.keystroke.modifiers;
                             if !this.palette_open && mods.secondary() && !mods.shift && !mods.alt {
@@ -196,6 +200,7 @@ impl Diffy {
             let saved = this.state_path.as_ref().map(|p| state::load(p)).transpose();
             match saved {
                 Ok(Some(saved)) => {
+                    this.import.preferences = saved.discovery;
                     this.sidebar_width = saved
                         .sidebar_width
                         .filter(|v| v.is_finite())
@@ -246,6 +251,14 @@ impl Diffy {
             }
         }
         this.restoring = false;
+        if !demo && this.state_path.is_some() {
+            cx.defer_in(window, |this, window, cx| {
+                this.start_discovery(window, cx);
+                if !this.import.preferences.onboarding_completed {
+                    this.open_import(window, cx);
+                }
+            });
+        }
         let owner = cx.entity().downgrade();
         window.on_window_should_close(cx, move |_, cx| {
             owner
@@ -327,6 +340,7 @@ impl Diffy {
     }
     pub(super) fn add_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let path = std::fs::canonicalize(&path).unwrap_or(path);
+        self.import.preferences.excluded.remove(&path);
         if let Some(ix) = self
             .projects
             .iter()
@@ -460,6 +474,9 @@ impl Diffy {
         if self.projects[ix].mutating {
             return;
         }
+        if let Some(path) = self.projects[ix].path.clone() {
+            self.import.preferences.excluded.insert(path);
+        }
         self.projects.remove(ix);
         if self.active > ix {
             self.active -= 1;
@@ -524,6 +541,7 @@ impl Diffy {
                 .collect(),
             active: self.projects.get(self.active).and_then(|p| p.path.clone()),
             sidebar_width: Some(self.sidebar_width),
+            discovery: self.import.preferences.clone(),
             ..Default::default()
         };
         if self.persisted_state.as_ref() == Some(&state) && self.state_error.is_none() {
