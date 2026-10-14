@@ -1,2 +1,4 @@
 # Empty context lines inside the embedded Git patches intentionally contain a space.
 src/demo.rs whitespace=-blank-at-eol
+# The signature covers these exact bytes, including line endings.
+tests/fixtures/update/payload.txt -text

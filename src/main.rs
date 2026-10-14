@@ -152,7 +152,7 @@ fn main() {
                     std::fs::write(output, "rendered\n").expect("write smoke result");
                     cx.quit();
                 });
-                window.request_animation_frame();
+                window.refresh();
             });
         }
         // The receiver is registered before launching so cold-start URL events cannot be lost.
