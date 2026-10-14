@@ -2,7 +2,7 @@
 
 [Download the latest version for macOS](https://github.com/hitSlop/diffy/releases/latest) · Apple Silicon · macOS 13+
 
-![Diffy on macOS: split diff, project change badges, and a searchable file list grouped by directory](assets/screenshot.png)
+![Diffy on macOS: a split Rust diff, project change badges, a searchable file list grouped by directory, and project import](assets/screenshot.png)
 
 A small native Rust/GPUI Kit diff viewer for macOS.
 
