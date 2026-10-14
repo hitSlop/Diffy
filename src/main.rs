@@ -147,10 +147,14 @@ fn main() {
             let output = std::env::var_os("DIFFY_SMOKE_RESULT")
                 .expect("DIFFY_SMOKE_RESULT is required for --smoke-test");
             let _ = current.0.update(cx, |_, window, _| {
-                window.on_next_frame(move |window, cx| {
-                    let _ = window.draw(cx);
-                    std::fs::write(output, "rendered\n").expect("write smoke result");
-                    cx.quit();
+                window.on_next_frame(move |window, _| {
+                    window.refresh();
+                    // The native frame loop draws and presents after this
+                    // callback. Report success on the following frame.
+                    window.on_next_frame(move |_, cx| {
+                        std::fs::write(output, "rendered\n").expect("write smoke result");
+                        cx.quit();
+                    });
                 });
                 window.refresh();
             });
