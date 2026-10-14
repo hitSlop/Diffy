@@ -23,6 +23,21 @@ def run(args, env, capture=False):
     return result.stdout if capture else None
 
 
+def package_config(metadata, platform_name, target, package_format, out):
+    config = metadata["metadata"]["packager"].copy()
+    config.pop("macos", None)
+    config.pop("before-packaging-command", None)
+    config.update({
+        "version": metadata["version"], "formats": [package_format], "target-triple": target,
+        "binaries": [{"path": "diffy", "main": True}, {"path": "diffy-cli", "main": False}],
+        "binaries-dir": str(ROOT / "target" / target / "release"), "out-dir": str(out),
+        "icons": ["assets/icon/icon.iconset/icon_32x32.png", "assets/icon/icon.iconset/icon_128x128.png", "assets/icon/icon.iconset/icon_256x256.png"],
+    })
+    if platform_name == "windows":
+        config["nsis"] = {"installMode": "currentUser"}
+    return config
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=TARGETS, required=True)
@@ -42,6 +57,10 @@ def main():
     metadata = json.loads(run(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], env, True))["packages"][0]
     version = metadata["version"]
     out = ROOT / "dist" / ("unsigned" if args.unsigned else "release") / args.platform
+    config = package_config(metadata, args.platform, target, package_format, out)
+    # An empty format list parses the full config without packaging or needing binaries.
+    # Validate with the pinned packager before spending time on a release build.
+    run([packager, "--config", json.dumps({**config, "formats": []})], env)
     # Reject stale outputs so the fixed-name link always contains this build.
     if out.exists():
         shutil.rmtree(out)
@@ -49,17 +68,6 @@ def main():
     env["DIFFY_PACKAGE_KIND"] = package_format
     run(["cargo", "build", "--locked", "--release", "--bins", "--target", target], env)
     run(["python3" if args.platform == "linux" else "python", "scripts/collect-licenses.py", target], env)
-    config = metadata["metadata"]["packager"].copy()
-    config.pop("macos", None)
-    config.pop("before-packaging-command", None)
-    config.update({
-        "version": version, "formats": [package_format], "target-triple": target,
-        "binaries": [{"path": "diffy", "main": True}, {"path": "diffy-cli", "main": False}],
-        "binaries-dir": str(ROOT / "target" / target / "release"), "out-dir": str(out),
-        "icons": ["assets/icon/icon.iconset/icon_32x32.png", "assets/icon/icon.iconset/icon_128x128.png", "assets/icon/icon.iconset/icon_256x256.png"],
-    })
-    if args.platform == "windows":
-        config["nsis"] = {"install-mode": "currentUser"}
     configuration = ROOT / "target/packaging" / f"{args.platform}.json"
     configuration.parent.mkdir(parents=True, exist_ok=True)
     configuration.write_text(json.dumps(config, indent=2) + "\n")
