@@ -1,4 +1,4 @@
-name: Website checks
+name: Website
 on:
   push:
     branches: [master]
@@ -28,3 +28,46 @@ jobs:
       - run: npm run build
         env:
           DODO_CHECKOUT_URL: ${{ matrix.checkout }}
+  deploy:
+    name: Deploy production
+    needs: build
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: diffy-site-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deployment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Configure the CLOUDFLARE_API_TOKEN Actions secret and CLOUDFLARE_ACCOUNT_ID repository variable before deploying. See site/README.md."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      # Build production separately: the test matrix's checkout fixture must
+      # never be included in a public deployment.
+      - run: npm run build
+        env:
+          DODO_CHECKOUT_URL: ${{ vars.DODO_CHECKOUT_URL }}
+      - name: Upload production site
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: site
+          wranglerVersion: '4.151.0'
+          # The existing Direct Upload project's production label is main;
+          # the repository's deployment trigger is master.
+          command: pages deploy dist --project-name diffy-site --branch main --commit-hash ${{ github.sha }}
