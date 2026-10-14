@@ -27,6 +27,106 @@ impl RefreshHint {
     }
 }
 
+/// Topology has its own signal so checkout creation/removal doesn't force a
+/// status read for every event in the common object database.
+pub fn start_topology(
+    common: &Path,
+) -> Result<(RecommendedWatcher, async_channel::Receiver<()>), String> {
+    let (tx, rx) = async_channel::bounded(1);
+    let poll_tx = tx.clone();
+    let root = common.to_owned();
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        let relevant = event.map_or(true, |event| {
+            !matches!(event.kind, EventKind::Access(_))
+                && (event.need_rescan()
+                    || event.paths.is_empty()
+                    || event.paths.iter().any(|p| topology_event(&root, p)))
+        });
+        if relevant {
+            let _ = tx.try_send(());
+        }
+    })
+    .map_err(|e| e.to_string())?;
+    watcher
+        .watch(common, RecursiveMode::Recursive)
+        .map_err(|e| e.to_string())?;
+    // FSEvents can coalesce or omit .git directory registration changes. This
+    // backstop only stamps the small registry, never the object database or
+    // source files, and stops when the repository project drops its receiver.
+    let registry = common.join("worktrees");
+    let mut previous = topology_stamp(&registry);
+    std::thread::Builder::new()
+        .name("diffy-worktrees".into())
+        .spawn(move || {
+            while !poll_tx.is_closed() {
+                std::thread::sleep(Duration::from_secs(1));
+                let current = topology_stamp(&registry);
+                if current != previous {
+                    previous = current;
+                    let _ = poll_tx.try_send(());
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    Ok((watcher, rx))
+}
+
+fn topology_stamp(registry: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    let mut entries = std::fs::read_dir(registry)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    entries.sort();
+    for entry in entries {
+        entry.hash(&mut hash);
+        for file in ["gitdir", "commondir", "HEAD", "locked"] {
+            let metadata = std::fs::metadata(entry.join(file)).ok();
+            metadata
+                .as_ref()
+                .map(|m| (m.len(), m.modified().ok()))
+                .hash(&mut hash);
+        }
+    }
+    hash.finish()
+}
+
+fn topology_event(common: &Path, path: &Path) -> bool {
+    // FSEvents can report /var while discovery returned /private/var. Deletion
+    // events need the nearest existing ancestor because the leaf no longer exists.
+    let aligned = if path.starts_with(common) {
+        path.to_owned()
+    } else {
+        path.ancestors()
+            .find_map(|ancestor| {
+                std::fs::canonicalize(ancestor).ok().and_then(|base| {
+                    path.strip_prefix(ancestor)
+                        .ok()
+                        .map(|suffix| base.join(suffix))
+                })
+            })
+            .unwrap_or_else(|| path.to_owned())
+    };
+    let Ok(relative) = aligned.strip_prefix(common) else {
+        return false;
+    };
+    let parts = relative
+        .components()
+        .map(|p| p.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>();
+    (parts.first().is_some_and(|p| p == "worktrees")
+        && (parts.len() <= 2
+            || (parts.len() == 3
+                && matches!(
+                    parts[2].as_ref(),
+                    "HEAD" | "gitdir" | "commondir" | "locked"
+                ))))
+        || matches!(relative.to_str(), Some("config" | "HEAD"))
+}
+
 pub fn start(
     root: &Path,
     git_dirs: &[PathBuf],
@@ -404,6 +504,31 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     struct Fixture(PathBuf);
+
+    #[test]
+    fn topology_only_signals_registrations_paths_locks_and_heads() {
+        let root = Path::new("/repo/.git");
+        for path in [
+            "worktrees",
+            "worktrees/new",
+            "worktrees/new/gitdir",
+            "worktrees/new/locked",
+            "worktrees/new/HEAD",
+            "HEAD",
+            "config",
+        ] {
+            assert!(topology_event(root, &root.join(path)), "{path}");
+        }
+        for path in [
+            "objects/ab/cd",
+            "logs/HEAD",
+            "worktrees/new/logs/HEAD",
+            "worktrees/new/index",
+            "worktrees/new/index.lock",
+        ] {
+            assert!(!topology_event(root, &root.join(path)), "{path}");
+        }
+    }
 
     impl Fixture {
         fn new() -> Self {

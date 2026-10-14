@@ -55,7 +55,9 @@ fn click_menu(window: &mut gpui_kit::Window, label: &str, cx: &mut gpui_kit::App
         .into_iter()
         .find(|s| s.role() == Some(Role::MenuItem) && s.label() == Some(label))
         .unwrap();
-    window.click(row.path().last().unwrap().clone(), cx);
+    window
+        .within("popup-menu")
+        .click(row.path().last().unwrap().clone(), cx);
     window.render_frame(cx);
 }
 fn right_click(window: &mut gpui_kit::Window, ix: usize, cx: &mut gpui_kit::App) {

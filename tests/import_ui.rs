@@ -39,6 +39,7 @@ fn main() {
     let snapshot = Snapshot {
         candidates: (0..40)
             .map(|i| Candidate {
+                repository: None,
                 path: PathBuf::from(format!("/tmp/import-fixture/project-{i:02}")),
                 sources: if i == 39 {
                     BTreeSet::from([Source::Herdr, Source::Claude])

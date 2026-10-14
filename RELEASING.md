@@ -54,14 +54,14 @@ Notarization reports stay local. Never upload `.release-secrets`, VISIONCAL cred
 Commit the validated source on a release branch, push it, and open a PR against `master`. Tag the exact validated commit and prepare a draft while the PR checks run. Review and merge the PR before publication:
 
 ```sh
-git tag v0.2.2
-git push origin HEAD v0.2.2
-gh release create v0.2.2 --repo hitSlop/diffy --draft --verify-tag \
-  --title 'Diffy v0.2.2' --notes-file packaging/release-notes.md \
-  dist/release/Diffy_0.2.2_aarch64.dmg \
+git tag v0.2.3
+git push origin HEAD v0.2.3
+gh release create v0.2.3 --repo hitSlop/diffy --draft --verify-tag \
+  --title 'Diffy v0.2.3' --notes-file packaging/release-notes.md \
+  dist/release/Diffy_0.2.3_aarch64.dmg \
   dist/release/Diffy-macos-aarch64.dmg \
-  dist/release/Diffy_0.2.2_aarch64.app.tar.gz \
-  dist/release/Diffy_0.2.2_aarch64.app.tar.gz.sig \
+  dist/release/Diffy_0.2.3_aarch64.app.tar.gz \
+  dist/release/Diffy_0.2.3_aarch64.app.tar.gz.sig \
   dist/release/update-macos-aarch64.json dist/release/SHA256SUMS
 ```
 
@@ -74,8 +74,8 @@ Always upload the fixed-name DMG with every release. The website redirects `http
 The automated suite covers preference migration, update state transitions, Git write gating, transport validation, real signature verification, corrupted payloads, and existing application behavior. To exercise the real app archive on isolated bundle copies:
 
 ```sh
-DIFFY_TEST_UPDATE_ARCHIVE="$PWD/dist/release/Diffy_0.2.2_aarch64.app.tar.gz" \
-DIFFY_TEST_UPDATE_SIGNATURE="$PWD/dist/release/Diffy_0.2.2_aarch64.app.tar.gz.sig" \
+DIFFY_TEST_UPDATE_ARCHIVE="$PWD/dist/release/Diffy_0.2.3_aarch64.app.tar.gz" \
+DIFFY_TEST_UPDATE_SIGNATURE="$PWD/dist/release/Diffy_0.2.3_aarch64.app.tar.gz.sig" \
 cargo test --locked --test update_archive signed_app_archive_installs_and_relaunches_an_isolated_bundle -- --ignored --exact --nocapture
 ```
 

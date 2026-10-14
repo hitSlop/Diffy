@@ -10,6 +10,9 @@ A small native Rust/GPUI Kit diff viewer for macOS.
 - Bundled Commit Mono Regular and Medium throughout the app, with programming ligatures disabled.
 - A compact alphabetical file list on the right and one selected diff in the center. Files are grouped under their folder. A nested folder reads as `src · app`, with the ancestor dimmed and shortened in the middle when it is long. Filenames are indented under that header and shortened in the middle when needed. Root files stay flush. Hover shows the complete path. Find file, under the scope header, filters the list with nucleo. ⌘F focuses it. Stage all / Unstage all still cover the whole scope.
 - **Staged** first, then **Changes**, with separate counts. Changes is selected initially.
+- A fixed project header shows a small project icon and the project name, with linked worktrees alongside it. Staged/Changes and review controls stay in the row below for every project. Attached checkout tabs use branch names; detached checkouts are marked explicitly. Hover shows the checkout path and branch, and the overflow menu keeps long lists accessible.
+- Checkouts sharing one Git common directory occupy one rail entry, with a combined badge. Each checkout retains its own scope, selected file, mode, and reading position. The rail remembers the last selected checkout; the palette provides worktree selection and Next/Previous worktree commands. Worktree creation/removal refreshes automatically. Removing a project removes its saved checkout group and excludes it from automatic import without changing Git files.
+- Empty diff panes include a little Snake game while you wait for changes. Enter starts or pauses it; arrow keys or WASD steer. Switching checkouts or Staged/Changes pauses the game, and reduced motion disables its animation.
 - Staged compares HEAD with the index; Changes compares the index with disk and includes untracked files. A file can appear in both views.
 - Unified or split diffs with highlighting, inline changes, expandable context, source selection, and copying. Long lines wrap; split mode gives 40% to the original and 60% to the modified source. Added files fill one pane. Red and green marks beside the scrollbar show where further changes appear when the diff needs scrolling.
 - Hover **+ / −** actions in file rows and the preview header for whole-file staging/unstaging. Row actions affect that row without selecting it.
@@ -22,7 +25,7 @@ A small native Rust/GPUI Kit diff viewer for macOS.
 - **Edit Project…** lets you rename it, change its color with GPUI Kit's color picker, enter an emoji (⌃⌘Space opens the macOS picker), or choose an image. Selected images are copied into Diffy's own storage in the background, so moving or deleting the original won't remove the icon. Images use rounded square crops and stay fixed in size during hover.
 - Removing from Diffy only removes the saved entry. It never deletes a project or changes its Git state.
 - Holding ⌘↑/↓ advances through files at approximately five per second after a brief initial delay; individual taps stay immediate. macOS holds use a timer and physical key-state checks, independent of OS shortcut autorepeat. Navigation preferences save after a short idle debounce.
-- Drag the unused toolbar area to move the window. A short repository path and branch sit on the left of the footer, with keyboard hints on the right; no app title, change description, commit, approval, or messaging controls.
+- Drag the project header or unused toolbar area to move the window. A short repository path and branch sit on the left of the footer, with keyboard hints on the right; no app title, change description, commit, approval, or messaging controls.
 
 ## Run
 
@@ -74,6 +77,7 @@ CLI installation is currently macOS-only. Development binaries still accept repo
 | ⌘P | Search projects and commands |
 | ⌘O | Open repositories |
 | ⌘⇧↓ / ⌘⇧↑ | Next / previous project |
+| ⌘→ / ⌘← | Next / previous worktree (wraps within the project) |
 | ⌘↓ / ⌘↑ | Next / previous file |
 | ⌘ + vertical scroll | Move between files |
 | ⌘F | Find a changed file |
@@ -128,7 +132,7 @@ DIFFY_GIT_BACKEND=gix cargo run --locked -- /path/to/repository
 DIFFY_GIT_BACKEND=gix cargo run --locked -- --check /path/to/repository
 ```
 
-`--check` reports which backend actually supplied the listing. Unset the variable or set `DIFFY_GIT_BACKEND=git` to use Git throughout. Native read errors and unsupported cases automatically fall back to Git: conflicts, submodules, sparse checkout, intent-to-add entries, inherited repository/config environment overrides, embedded repositories, uncertain rename matches, and changed files with content-conversion attributes or enabled `core.autocrlf`. Both backends use the same cache revision keys and watch directories. Branch labels, source previews, ignore checks for watcher events, and staging/unstaging continue to use Git. The gix status reader never writes suggested index updates. See [the performance report](docs/performance.md) for compatibility coverage and rollout criteria.
+`--check` reports which backend actually supplied the listing. Unset the variable or set `DIFFY_GIT_BACKEND=git` to use Git throughout. Native read errors and unsupported cases automatically fall back to Git: conflicts, submodules, sparse checkout, intent-to-add entries, inherited repository/config environment overrides, embedded repositories, uncertain rename matches, and changed files with content-conversion attributes or enabled `core.autocrlf`. Both backends use the same cache revision keys and watch directories. Branch labels, source previews, ignore checks for watcher events, and staging/unstaging continue to use Git. The gix status reader never writes suggested index updates. See [the performance report](docs/performance.md) for compatibility coverage and rollout criteria. Full-client and SSH feasibility findings are in [Git studies](docs/git-studies.md).
 
 Built with [GPUI Kit](https://gpui-kit.com/) and [Commit Mono](https://commitmono.com/). See [plan.md](plan.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 

@@ -28,12 +28,25 @@ pub struct SavedProject {
     #[serde(default)]
     pub icon: Option<ProjectIcon>,
 }
+/// Shared rail appearance and selection, with checkout review settings retained
+/// in SavedProject. Optional at schema version 1 for migration from flat projects.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SavedRepositoryProject {
+    pub common_dir: PathBuf,
+    pub checkouts: Vec<PathBuf>,
+    pub active_checkout: Option<PathBuf>,
+    pub name: String,
+    pub color: u32,
+    pub icon: Option<ProjectIcon>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 // Optional fields may be added within a schema version. Retain compatibility
 // instead of rejecting all saved projects when an unfamiliar option appears.
 pub struct SavedState {
     pub version: u32,
     pub projects: Vec<SavedProject>,
+    #[serde(default)]
+    pub repositories: Vec<SavedRepositoryProject>,
     pub active: Option<PathBuf>,
     #[serde(default)]
     pub sidebar_width: Option<f32>,
@@ -70,6 +83,7 @@ impl Default for SavedState {
         Self {
             version: 1,
             projects: Vec::new(),
+            repositories: Vec::new(),
             active: None,
             sidebar_width: None,
             discovery: Default::default(),

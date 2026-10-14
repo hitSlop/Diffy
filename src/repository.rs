@@ -13,6 +13,8 @@ use gpui_kit::SharedString;
 use gpui_kit::component::diff::{DiffFile, DiffFileStatus};
 mod metadata;
 pub use metadata::*;
+mod worktrees;
+pub use worktrees::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChangeGroup {

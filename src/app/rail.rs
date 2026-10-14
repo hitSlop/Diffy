@@ -38,15 +38,17 @@ impl Diffy {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let icons = self
-            .projects
+        let rows = self.project_rows();
+        let icons = rows
             .iter()
             .enumerate()
-            .map(|(ix, project)| {
-                let active = ix == self.active;
+            .map(|(rail_ix, &ix)| {
+                let project = &self.projects[ix];
+                let (name, color, icon) = self.appearance(project);
+                let changed_count = self.repository_changed_count(ix);
+                let active = self.same_repository(ix, self.active);
                 let project_id = project.id;
-                let fallback_initial = project
-                    .name
+                let fallback_initial = name
                     .chars()
                     .next()
                     .unwrap_or('D')
@@ -54,7 +56,7 @@ impl Diffy {
                     .to_string();
                 let policy =
                     Transition::new(Duration::from_millis(160)).ease(|t| 1. - (1. - t).powi(4));
-                let id = ElementId::from(("project", ix));
+                let id = ElementId::from(("project", rail_ix));
                 let marker_opacity = transition(
                     (id.clone(), "marker"),
                     if active { 1f32 } else { 0. },
@@ -64,7 +66,7 @@ impl Diffy {
                 );
                 let animated_diameter = transition(
                     (id, "hover"),
-                    if self.hovered_project == Some(ix) {
+                    if self.hovered_project == Some(rail_ix) {
                         46f32
                     } else {
                         42.
@@ -73,21 +75,21 @@ impl Diffy {
                     window,
                     cx,
                 );
-                let diameter = if matches!(project.icon, Some(state::ProjectIcon::Image(_))) {
+                let diameter = if matches!(*icon, Some(state::ProjectIcon::Image(_))) {
                     42.
                 } else {
                     animated_diameter
                 };
                 h_flex()
-                    .id(("project-row", ix))
+                    .id(("project-row", rail_ix))
                     .relative()
                     .w_full()
                     .h(px(52.))
                     .justify_center()
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         let next = if *hovered {
-                            Some(ix)
-                        } else if this.hovered_project == Some(ix) {
+                            Some(rail_ix)
+                        } else if this.hovered_project == Some(rail_ix) {
                             None
                         } else {
                             this.hovered_project
@@ -109,10 +111,10 @@ impl Diffy {
                     )
                     .child(
                         Badge::new()
-                            .count(project.changed_count)
+                            .count(changed_count)
                             .color(rgb(0x34363c))
                             .child(
-                                Button::new(("project", ix))
+                                Button::new(("project", rail_ix))
                                     .ghost()
                                     .p_0()
                                     .border_0()
@@ -131,7 +133,7 @@ impl Diffy {
                                                     .w(px(diameter))
                                                     .h(px(diameter))
                                                     .rounded(px(12.))
-                                                    .bg(rgb(project.color)),
+                                                    .bg(rgb(color)),
                                             )
                                             .text_color(rgb(0x141618))
                                             .text_size(px(17.))
@@ -139,7 +141,7 @@ impl Diffy {
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .child(match &project.icon {
+                                            .child(match icon {
                                                 Some(state::ProjectIcon::Image(path)) => div()
                                                     .size(px(diameter))
                                                     .rounded(px(12.))
@@ -177,11 +179,8 @@ impl Diffy {
                                                     .into_any_element(),
                                             }),
                                     )
-                                    .accessibility_label(project.name.clone())
-                                    .tooltip(format!(
-                                        "{} · {} changed files",
-                                        project.name, project.changed_count
-                                    ))
+                                    .accessibility_label(name.clone())
+                                    .tooltip(format!("{} · {} changed files", name, changed_count))
                                     .tooltip_placement(Placement::Right)
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
@@ -208,7 +207,12 @@ impl Diffy {
                                 project_id,
                                 &this.project_apps.installed,
                                 project.path.is_some(),
-                                project.mutating,
+                                this.repository_mutating(
+                                    this.projects
+                                        .iter()
+                                        .position(|p| p.id == project_id)
+                                        .unwrap(),
+                                ),
                             )
                         }
                     })

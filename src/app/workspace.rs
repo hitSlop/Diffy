@@ -32,7 +32,48 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::px;
 
 impl Diffy {
+    pub(super) fn prepare_snake(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tab = self.snake_tab_id();
+        if tab != self.snake_tab {
+            self.snake_tab = tab;
+            self.snake.update(cx, |snake, _| snake.pause());
+            self.snake_took_focus = false;
+        }
+        if !self.shows_waiting_snake() {
+            self.snake_took_focus = false;
+            return;
+        }
+        if self.snake_took_focus {
+            return;
+        }
+        let file_focus = self.projects[self.active].view().focus.clone();
+        self.snake_took_focus = true;
+        let idle = window
+            .focused(cx)
+            .is_none_or(|focused| focused == self.focus || focused == file_focus);
+        if idle {
+            self.snake.focus_handle(cx).focus(window, cx);
+        }
+    }
+
+    fn snake_tab_id(&self) -> Option<(u64, ChangeGroup)> {
+        let project = self.projects.get(self.active)?;
+        Some((project.id, project.group))
+    }
+
+    fn shows_waiting_snake(&self) -> bool {
+        let Some(project) = self.projects.get(self.active) else {
+            return false;
+        };
+        project.view().files.is_empty()
+            && !project.loading
+            && self.settings.is_none()
+            && !self.palette_open
+            && self.import.picker.is_none()
+    }
+
     pub(super) fn render_center(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let show_snake = self.shows_waiting_snake();
         let Some(p) = self.projects.get(self.active) else {
             return v_flex()
                 .size_full()
@@ -117,6 +158,7 @@ impl Diffy {
             .size_full()
             .min_w_0()
             .min_h_0()
+            .children(self.render_worktrees(cx))
             .child(
                 Toolbar::new("review-toolbar")
                     .h(px(46.))
@@ -331,19 +373,35 @@ impl Diffy {
                     })
                     .into_any_element()
             } else if empty {
-                v_flex()
-                    .flex_1()
-                    .items_center()
-                    .justify_center()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(if p.loading {
-                        "Reading changes…"
-                    } else if p.group == ChangeGroup::Staged {
-                        "No staged files"
-                    } else {
-                        "No changes"
-                    })
-                    .into_any_element()
+                if show_snake {
+                    v_flex()
+                        .flex_1()
+                        .items_center()
+                        .justify_center()
+                        .gap_3()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(if p.group == ChangeGroup::Staged {
+                            "No staged files yet. While you wait:"
+                        } else {
+                            "No changes yet. While you wait:"
+                        })
+                        .child(self.snake.clone())
+                        .into_any_element()
+                } else {
+                    v_flex()
+                        .flex_1()
+                        .items_center()
+                        .justify_center()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(if p.loading {
+                            "Reading changes…"
+                        } else if p.group == ChangeGroup::Staged {
+                            "No staged files"
+                        } else {
+                            "No changes"
+                        })
+                        .into_any_element()
+                }
             } else {
                 div()
                     .id("diff-viewport")

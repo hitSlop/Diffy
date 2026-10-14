@@ -1,6 +1,6 @@
 [package]
 name = "diffy"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "A small desktop Git diff viewer"
 publish = false
@@ -96,5 +96,10 @@ required-features = ["ui-tests"]
 
 [[test]]
 name = "project_menu_ui"
+harness = false
+required-features = ["ui-tests"]
+
+[[test]]
+name = "worktrees_ui"
 harness = false
 required-features = ["ui-tests"]
