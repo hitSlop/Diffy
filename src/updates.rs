@@ -373,7 +373,7 @@ impl Package for Update {
                 .tempfile()
                 .map_err(|e| e.to_string())?;
             file.write_all(&bytes).map_err(|e| e.to_string())?;
-            file.sync_all().map_err(|e| e.to_string())?;
+            file.as_file().sync_all().map_err(|e| e.to_string())?;
             let (handle, path) = file.keep().map_err(|e| e.to_string())?;
             drop(handle);
             let arguments = self

@@ -317,6 +317,7 @@ impl Render for Diffy {
                 let modifiers = event.keystroke.modifiers;
                 if !modifiers.secondary() || modifiers.shift || modifiers.alt { return; }
                 let direction = match event.keystroke.key.as_str() { "up" => -1, "down" => 1, _ => return };
+                if (this.file_key_probe)(direction) { return; }
                 cx.stop_propagation();
                 this.native_file_key(direction, event.is_held, cx);
             }))

@@ -158,6 +158,30 @@ fn project_command(app: ProjectApp, application: &Path, root: &Path) -> std::pro
     }
     #[cfg(not(target_os = "macos"))]
     {
+        if app == ProjectApp::Warp {
+            let mut url = url::Url::parse("warp://action/new_window").expect("static Warp URL");
+            url.query_pairs_mut()
+                .append_pair("path", &root.to_string_lossy());
+            #[cfg(target_os = "linux")]
+            {
+                let mut command = std::process::Command::new("xdg-open");
+                command.arg(url.as_str());
+                return command;
+            }
+            #[cfg(windows)]
+            {
+                use base64::Engine as _;
+                use std::os::windows::process::CommandExt as _;
+                let script = format!("Start-Process '{}'", url.as_str().replace('\'', "''"));
+                let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+                let mut command = std::process::Command::new("powershell.exe");
+                command
+                    .args(["-NoProfile", "-EncodedCommand"])
+                    .arg(base64::engine::general_purpose::STANDARD.encode(bytes))
+                    .creation_flags(0x08000000);
+                return command;
+            }
+        }
         let mut command = std::process::Command::new(application);
         command.current_dir(root);
         match app {

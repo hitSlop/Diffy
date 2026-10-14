@@ -119,6 +119,18 @@ fn git_launch() -> Result<&'static GitLaunch, String> {
     );
     #[cfg(all(unix, not(target_os = "macos")))]
     paths.extend(["/usr/local/bin", "/usr/bin", "/bin"].map(PathBuf::from));
+    #[cfg(windows)]
+    {
+        paths.extend(
+            ["ProgramFiles", "ProgramFiles(x86)"]
+                .into_iter()
+                .filter_map(std::env::var_os)
+                .map(|root| PathBuf::from(root).join("Git/cmd")),
+        );
+        if let Some(dirs) = directories::BaseDirs::new() {
+            paths.push(dirs.data_local_dir().join("Programs/Git/cmd"));
+        }
+    }
     let name = if cfg!(windows) { "git.exe" } else { "git" };
     let program = paths
         .iter()
