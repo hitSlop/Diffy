@@ -53,6 +53,7 @@ impl Diffy {
             return;
         }
         self.stop_file_repeat();
+        self.reset_file_scroll();
         let p = self.projects.iter().find(|p| p.id == id).unwrap();
         let (name, color, icon) = self.appearance(p);
         let name = name.clone();

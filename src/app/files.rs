@@ -47,10 +47,44 @@ use gpui_kit::div;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::px;
 use gpui_kit::rgb;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Pixels of trackpad travel that move one file.
 const FILE_SCROLL_STEP: f32 = 40.;
+const FILE_SCROLL_IDLE: Duration = Duration::from_millis(200);
+
+#[derive(Default)]
+pub(super) struct FileScrollGesture {
+    command: bool,
+    phased: bool,
+    last_event: Option<Instant>,
+}
+
+impl FileScrollGesture {
+    /// Returns whether this event starts a new gesture. Keep the initial mode
+    /// after Ended: macOS delivers the momentum tail as Moved events.
+    fn update(&mut self, precise: bool, phase: TouchPhase, command: bool, now: Instant) -> bool {
+        if !precise {
+            *self = Self::default();
+            return true;
+        }
+        let fresh = phase == TouchPhase::Started
+            || self.last_event.is_none()
+            || (!self.phased
+                && self
+                    .last_event
+                    .is_some_and(|last| now.duration_since(last) >= FILE_SCROLL_IDLE));
+        if fresh {
+            self.command = command;
+            self.phased = phase == TouchPhase::Started;
+        }
+        self.last_event = Some(now);
+        if !command || phase == TouchPhase::Cancelled {
+            self.command = false;
+        }
+        fresh
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum FileScrollAxis {
@@ -542,9 +576,10 @@ impl Diffy {
             self.reset_file_scroll();
         }
     }
-    fn reset_file_scroll(&mut self) {
+    pub(super) fn reset_file_scroll(&mut self) {
         self.file_scroll_remainder = 0.;
         self.file_scroll_axis = None;
+        self.file_scroll_gesture.command = false;
     }
     /// Command plus a vertical wheel steps files. A horizontal gesture is left
     /// for the diff to pan. Returns whether this event was consumed.
@@ -554,18 +589,27 @@ impl Diffy {
         cx: &mut Context<Self>,
     ) -> bool {
         let mods = event.modifiers;
-        if !mods.secondary() || mods.shift || mods.alt {
-            self.reset_file_scroll();
-            return false;
-        }
-        if self.palette_open || self.settings.is_some() || self.import.picker.is_some() {
-            self.reset_file_scroll();
-            return false;
-        }
-        if event.touch_phase == TouchPhase::Started {
-            self.reset_file_scroll();
-        } else if !event.delta.precise() {
+        let command = mods.secondary()
+            && !mods.shift
+            && !mods.alt
+            && !self.palette_open
+            && self.settings.is_none()
+            && self.import.picker.is_none();
+        if self.file_scroll_gesture.update(
+            event.delta.precise(),
+            event.touch_phase,
+            command,
+            Instant::now(),
+        ) {
+            self.file_scroll_remainder = 0.;
             self.file_scroll_axis = None;
+        }
+        if !command
+            || event.touch_phase == TouchPhase::Cancelled
+            || (event.delta.precise() && !self.file_scroll_gesture.command)
+        {
+            self.reset_file_scroll();
+            return false;
         }
         let (dx, dy) = match event.delta {
             ScrollDelta::Pixels(delta) => (f32::from(delta.x), f32::from(delta.y)),
@@ -625,5 +669,70 @@ impl Diffy {
         self.projects
             .get(self.active)
             .and_then(|p| p.view().selected.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phaseless_scroll_requires_an_idle_gap_before_switching_modes() {
+        let mut gesture = FileScrollGesture::default();
+        let start = Instant::now();
+        gesture.update(true, TouchPhase::Moved, false, start);
+        gesture.update(
+            true,
+            TouchPhase::Moved,
+            true,
+            start + Duration::from_millis(50),
+        );
+        assert!(
+            !gesture.command,
+            "Pressing Command cannot take over a text scroll"
+        );
+        gesture.update(
+            true,
+            TouchPhase::Moved,
+            true,
+            start + Duration::from_millis(250),
+        );
+        assert!(
+            gesture.command,
+            "Command can navigate after a 200ms idle gap"
+        );
+    }
+
+    #[test]
+    fn phased_scroll_keeps_its_mode_through_delayed_momentum() {
+        let mut gesture = FileScrollGesture::default();
+        let start = Instant::now();
+        gesture.update(true, TouchPhase::Started, false, start);
+        gesture.update(
+            true,
+            TouchPhase::Ended,
+            false,
+            start + Duration::from_millis(50),
+        );
+        gesture.update(
+            true,
+            TouchPhase::Moved,
+            true,
+            start + Duration::from_secs(1),
+        );
+        assert!(
+            !gesture.command,
+            "Momentum belongs to the original text gesture"
+        );
+        gesture.update(
+            true,
+            TouchPhase::Started,
+            true,
+            start + Duration::from_secs(2),
+        );
+        assert!(
+            gesture.command,
+            "A fresh Command gesture enables navigation"
+        );
     }
 }

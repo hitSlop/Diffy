@@ -58,6 +58,7 @@ impl Diffy {
             self.close_palette(true, window, cx);
             return;
         }
+        self.reset_file_scroll();
         self.previous_focus = window.focused(cx);
         self.palette_open = true;
         self.command.update(cx, |state, cx| {

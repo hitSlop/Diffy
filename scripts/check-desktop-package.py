@@ -7,6 +7,21 @@ import tempfile
 import time
 from pathlib import Path
 
+
+class PackageDirectory(tempfile.TemporaryDirectory):
+    def cleanup(self):
+        # The relaunched Windows app reports its frame just before quitting.
+        # Its process can still hold the installation directory briefly.
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                return super().cleanup()
+            except PermissionError:
+                if os.name != "nt" or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.1)
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--platform", choices=["windows", "linux"], required=True)
 args = parser.parse_args()
@@ -14,7 +29,7 @@ root = Path(__file__).resolve().parent.parent
 package = root / "dist/unsigned" / args.platform / ("Diffy-windows-x86_64-setup.exe" if args.platform == "windows" else "Diffy-linux-x86_64.AppImage")
 if not os.environ.get("CI"):
     raise RuntimeError("Run installer checks only on disposable CI machines.")
-with tempfile.TemporaryDirectory(prefix="diffy-package-") as directory:
+with PackageDirectory(prefix="diffy-package-") as directory:
     directory = Path(directory)
     repo = directory / "项目 with spaces"
     repo.mkdir()

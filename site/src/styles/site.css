@@ -189,6 +189,23 @@ h1 {
   margin: 29px 0 8px;
   letter-spacing: -0.4px;
 }
+.hero-badges {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0 0 18px;
+  list-style: none;
+}
+.hero-badges li {
+  padding: 6px 10px;
+  border: 1px solid #42452c;
+  border-radius: 5px;
+  color: #e4ed64;
+  font-size: 10px;
+  line-height: 1.6;
+}
 .compatibility {
   font-size: 11px;
   color: var(--muted);

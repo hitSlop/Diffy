@@ -404,6 +404,7 @@ impl Diffy {
             return;
         }
         self.stop_file_repeat();
+        self.reset_file_scroll();
         if self.settings.is_some() {
             self.close_settings(window, cx);
         }
