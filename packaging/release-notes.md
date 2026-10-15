@@ -1,8 +1,7 @@
-Diffy macOS beta, Windows/Linux alpha
+Diffy 0.2.5 — smoother file navigation
 
-- Add Windows x86-64 per-user installers and Linux x86-64 AppImages with signed automatic updates.
-- Use native settings directories and forward terminal requests to the running Windows/Linux app.
-- Add platform-aware file-manager, terminal/editor launch, shortcuts, and window controls.
-- Offer one purchase for every platform: $14.99 during beta, regular price $24.99.
+- Pressing Command (Ctrl on Windows/Linux) during an ongoing text scroll now keeps scrolling the text, including momentum, instead of jumping between files. Start a fresh scroll with the modifier held to navigate files.
+- Releasing the modifier, cancelling a gesture, or opening a dialog cancels file navigation for the rest of that gesture.
+- Add “Freakishly fast” and “Keyboard shortcuts galore” badges to the landing page.
 
 Windows and Linux are early alphas with limited hardware testing. Windows installers have no publisher signature. Linux initially targets Ubuntu 24.04+ with Wayland or X11 and a working Vulkan driver. Git is required on every platform.

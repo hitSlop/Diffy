@@ -70,4 +70,13 @@ with tempfile.TemporaryDirectory(prefix="diffy-package-") as directory:
         raise RuntimeError("The updated application did not relaunch and render.")
     if state.read_bytes() != original:
         raise RuntimeError("Update/restart changed preferences.")
+    if args.platform == "windows":
+        # The marker is written just before quitting. Wait for this isolated
+        # app to exit before TemporaryDirectory removes its installation.
+        subprocess.run([
+            "powershell", "-NoProfile", "-Command",
+            "foreach ($app in @(Get-Process -Name diffy -ErrorAction SilentlyContinue)) { "
+            "if ($app.Path -eq $env:DIFFY_CI_SMOKE_EXECUTABLE) { "
+            "if (!$app.WaitForExit(45000)) { throw 'Updated smoke-test app did not exit.' } } }",
+        ], env={**update_env, "DIFFY_CI_SMOKE_EXECUTABLE": str(executable)}, check=True, timeout=50)
 print("Installed package, CLI Git access, and preference preservation verified.")

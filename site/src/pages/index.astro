@@ -24,6 +24,10 @@ if (checkout) {
       <Mascot />
       <p class="intro">A native Git diff viewer, built in Rust.</p>
       <p class="agent-line">Keep up with your agents’ changes.</p>
+      <ul class="hero-badges" aria-label="Highlights">
+        <li>Freakishly fast</li>
+        <li>Keyboard shortcuts galore</li>
+      </ul>
       <p class="compatibility">{platforms.map((platform, index) => <>{index > 0 && <span aria-hidden="true"> · </span>}{platform.name} {platform.stage.toLowerCase()}</>)} <span aria-hidden="true">·</span> Requires Git</p>
       <div class="purchase">
         <p class="beta-price"><span class="visually-hidden">Regular price </span><s>{price.regular}</s> <strong>{price.beta}</strong><span> during beta</span></p>

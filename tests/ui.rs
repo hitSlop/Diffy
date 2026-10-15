@@ -160,6 +160,126 @@ fn main() {
             Some("src/capture.rs"),
             "Scrolling without Command leaves the file selected"
         );
+        // Pressing Command during a text gesture must not reinterpret its
+        // remaining movement, including momentum after fingers leave the pad.
+        for (modifiers, phase, dy) in [
+            (Modifiers::none(), TouchPhase::Started, -80.),
+            (cmd, TouchPhase::Moved, -80.),
+            (cmd, TouchPhase::Ended, 0.),
+            (cmd, TouchPhase::Moved, -80.),
+        ] {
+            scroll(
+                w,
+                ScrollDelta::Pixels(point(px(0.), px(dy))),
+                modifiers,
+                phase,
+                cx,
+            );
+            assert_eq!(
+                view.read(cx).selected_file().map(|p| p.as_str()),
+                Some("src/capture.rs"),
+                "A text gesture stays on its file when Command is pressed"
+            );
+        }
+        // A modifier release with no intervening wheel event must also cancel
+        // the accumulated navigation and prevent reactivation in this gesture.
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-39.))),
+            cmd,
+            TouchPhase::Started,
+            cx,
+        );
+        {
+            use gpui_kit::InputEvent as _;
+            for modifiers in [Modifiers::none(), cmd] {
+                w.dispatch_event(
+                    gpui_kit::ModifiersChangedEvent {
+                        modifiers,
+                        ..Default::default()
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+            }
+        }
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-80.))),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "Repressing Command cannot reactivate the same gesture"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-39.))),
+            cmd,
+            TouchPhase::Started,
+            cx,
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-80.))),
+            cmd,
+            TouchPhase::Cancelled,
+            cx,
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-80.))),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "Cancelled gestures cannot continue navigating files"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-39.))),
+            cmd,
+            TouchPhase::Started,
+            cx,
+        );
+        w.press("secondary-p", cx);
+        w.render_frame(cx);
+        assert!(view.read(cx).palette_is_open());
+        w.press("escape", cx);
+        w.render_frame(cx);
+        assert!(!view.read(cx).palette_is_open());
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-80.))),
+            cmd,
+            TouchPhase::Moved,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/capture.rs"),
+            "Opening and closing the palette cancels an ongoing file gesture"
+        );
+        scroll(
+            w,
+            ScrollDelta::Pixels(point(px(0.), px(-40.))),
+            cmd,
+            TouchPhase::Started,
+            cx,
+        );
+        assert_eq!(
+            view.read(cx).selected_file().map(|p| p.as_str()),
+            Some("src/duration.rs"),
+            "A fresh Command gesture enables file navigation again"
+        );
+        w.press("secondary-up", cx);
+        w.render_frame(cx);
         scroll(
             w,
             ScrollDelta::Lines(point(0., -1.)),

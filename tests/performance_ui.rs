@@ -174,6 +174,44 @@ fn main() {
     dispatch(&mut cx, Box::new(app::NextFile));
     dispatch(&mut cx, Box::new(app::NextFile));
     wait(&mut cx);
+    // Text scrolling must continue when Command is pressed mid-gesture,
+    // including the momentum tail that follows the finger-lift event.
+    cx.update_window(handle, |_, window, cx| {
+        use gpui_kit::{InputEvent as _, Modifiers, ScrollDelta, TouchPhase, point, px};
+        window.render_frame(cx);
+        let mut previous_line = view.read(cx).selected_top_line(cx).unwrap_or(0);
+        for (modifiers, touch_phase, dy) in [
+            (Modifiers::none(), TouchPhase::Started, -200.),
+            (Modifiers::secondary_key(), TouchPhase::Moved, -200.),
+            (Modifiers::secondary_key(), TouchPhase::Ended, 0.),
+            (Modifiers::secondary_key(), TouchPhase::Moved, -200.),
+        ] {
+            window.dispatch_event(
+                gpui_kit::ScrollWheelEvent {
+                    position: window.find("diff-body").bounds().center(),
+                    delta: ScrollDelta::Pixels(point(px(0.), px(dy))),
+                    modifiers,
+                    touch_phase,
+                }
+                .to_platform_input(),
+                cx,
+            );
+            window.render_frame(cx);
+            assert_eq!(
+                view.read(cx).selected_file().map(|p| p.as_str()),
+                Some("large.txt")
+            );
+            let line = view.read(cx).selected_top_line(cx).unwrap();
+            if dy != 0. {
+                assert!(
+                    line > previous_line,
+                    "Text keeps scrolling after Command is pressed"
+                );
+            }
+            previous_line = line;
+        }
+    })
+    .unwrap();
     if scroll_report {
         let requests = cx.update(|cx| view.read(cx).preview_request_count());
         for target in ["diff-body", "file-list"] {

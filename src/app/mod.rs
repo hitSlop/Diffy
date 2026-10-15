@@ -213,6 +213,7 @@ pub struct Diffy {
     file_key_probe: fn(isize) -> bool,
     file_scroll_remainder: f32,
     file_scroll_axis: Option<files::FileScrollAxis>,
+    file_scroll_gesture: files::FileScrollGesture,
     navigation_save: Option<Task<()>>,
     persisted_state: Option<state::SavedState>,
     preview_cache: crate::repository::SharedPreviewCache,
