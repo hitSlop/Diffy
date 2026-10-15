@@ -95,7 +95,7 @@ pub fn default_path() -> Option<PathBuf> {
     preference_path(
         std::env::var_os("DIFFY_STATE_PATH"),
         std::env::var_os("DIFFER_STATE_PATH"),
-        std::env::var_os("HOME"),
+        directories::BaseDirs::new().map(|dirs| dirs.home_dir().as_os_str().to_owned()),
     )
 }
 fn preference_path(
@@ -104,11 +104,23 @@ fn preference_path(
     home: Option<std::ffi::OsString>,
 ) -> Option<PathBuf> {
     current.or(legacy).map(PathBuf::from).or_else(|| {
-        home.map(|home| PathBuf::from(home).join("Library/Application Support/Diffy/state.json"))
+        #[cfg(target_os = "macos")]
+        {
+            home.map(|home| {
+                PathBuf::from(home).join("Library/Application Support/Diffy/state.json")
+            })
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = home;
+            directories::ProjectDirs::from("com", "hitSlop", "Diffy")
+                .map(|dirs| dirs.config_local_dir().join("state.json"))
+        }
     })
 }
 pub fn load(path: &Path) -> Result<SavedState, String> {
-    let migration_allowed = std::env::var_os("DIFFY_STATE_PATH").is_none()
+    let migration_allowed = cfg!(target_os = "macos")
+        && std::env::var_os("DIFFY_STATE_PATH").is_none()
         && std::env::var_os("DIFFER_STATE_PATH").is_none()
         && default_path().as_deref() == Some(path);
     let legacy = migration_allowed
@@ -124,7 +136,8 @@ pub fn load(path: &Path) -> Result<SavedState, String> {
 /// Restore on the UI thread without performing a migration write. The application's
 /// background writer creates the current preferences file after restoration.
 pub fn load_for_restore(path: &Path) -> Result<SavedState, String> {
-    if path.exists()
+    if !cfg!(target_os = "macos")
+        || path.exists()
         || std::env::var_os("DIFFY_STATE_PATH").is_some()
         || std::env::var_os("DIFFER_STATE_PATH").is_some()
         || default_path().as_deref() != Some(path)
@@ -239,13 +252,21 @@ mod tests {
             preference_path(None, Some("/old".into()), Some("/home".into())),
             Some(PathBuf::from("/old"))
         );
+        #[cfg(target_os = "macos")]
         assert_eq!(
             preference_path(None, None, Some("/home".into())),
             Some(PathBuf::from(
                 "/home/Library/Application Support/Diffy/state.json"
             ))
         );
+        #[cfg(target_os = "macos")]
         assert_eq!(preference_path(None, None, None), None);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(
+            preference_path(None, None, None),
+            directories::ProjectDirs::from("com", "hitSlop", "Diffy")
+                .map(|dirs| dirs.config_local_dir().join("state.json"))
+        );
     }
     #[test]
     fn preferences_round_trip_and_removal_only_updates_state() {

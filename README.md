@@ -1,10 +1,10 @@
 # <img src="assets/icon/icon.iconset/icon_128x128.png" alt="Diffy chameleon" width="40" height="40" align="middle"> Diffy
 
-[Download the latest version for macOS](https://github.com/hitSlop/diffy/releases/latest) · Apple Silicon · macOS 13+
+[Downloads and installation](https://diffy.hitslop.com/downloads) · macOS **beta** · Windows/Linux **alpha**
 
 ![Diffy on macOS: a split Rust diff, project change badges, a searchable file list grouped by directory, and project import](assets/screenshot.png)
 
-A small native Rust/GPUI Kit diff viewer for macOS.
+A small native Rust/GPUI Kit diff viewer. macOS is in beta; Windows and Linux are early alphas with limited hardware testing. One purchase supports every platform: **$14.99 during beta**, regular price ~~$24.99~~. Windows/Linux download links become available after release validation and publication.
 
 - Pure-black surfaces and colored squircle project icons that grow gently on hover. Badges count unique changed files across Staged and Changes (partially staged files count once).
 - Bundled Commit Mono Regular and Medium throughout the app, with programming ligatures disabled.
@@ -29,7 +29,7 @@ A small native Rust/GPUI Kit diff viewer for macOS.
 
 ## Run
 
-Requires Rust and Xcode Command Line Tools. Git must be on PATH for repository mode.
+Requires Rust 1.92+ and the native platform toolchain. macOS needs Xcode Command Line Tools; Windows needs Visual Studio 2022 C++ Build Tools, the Windows SDK, and CMake with the MSVC Rust toolchain; Linux needs the development libraries listed in RELEASING.md. Git must be installed for repository mode.
 
 ```sh
 cargo run --locked
@@ -68,9 +68,11 @@ diffy --version
 
 `diffy .` adds or selects the repository in the existing Diffy window and brings it forward. A closed window is recreated; a stopped app is launched. Relative paths are resolved in your terminal, and nested folders resolve to the repository root. `diffy` without paths opens your saved projects. Reinstall the command if you move `Diffy.app`; normal updates at the same location keep it working.
 
-CLI installation is currently macOS-only. Development binaries still accept repository paths directly through `cargo run`.
+CLI installation supports all three desktop targets. Linux installs `~/.local/bin/diffy`, pointing to the outer AppImage when packaged. Windows copies a managed console launcher to its local app-data directory and shows instructions for adding the directory to your user Path. The Windows installer includes `diffy-cli.exe` beside the GUI executable. Development binaries accept repository paths directly through `cargo run`. Windows/Linux invocations forward requests to the existing app through a bounded per-user local socket; demo mode stays isolated.
 
 ## Keyboard shortcuts
+
+Use **Ctrl** instead of **⌘** on Windows and Linux. Menu and footer hints adapt to the platform.
 
 | Shortcut | Action |
 |---|---|
@@ -98,7 +100,7 @@ Unmerged files remain readable with their conflict markers. Resolve and stage th
 
 Git writes affect the selected file's index entries only. Unstaging preserves working-tree contents, including on unborn branches. Rename actions include both paths; copy actions affect the destination only. Errors retain the last good preview.
 
-Preferences live at `~/Library/Application Support/Diffy/state.json` and contain paths and viewer settings, never patches or source contents. Imported project images live beside it in `project-icons/`, named by their SHA-256 contents so matching filenames cannot overwrite other icons. Back up the folder to keep both preferences and images. Existing image references remain readable; selecting an image again copies it into managed storage. Tests inject temporary storage; `DIFFY_STATE_PATH` can override the path for isolated development sessions and also relocates the icon folder.
+Preferences live at `~/Library/Application Support/Diffy/state.json` on macOS, `$XDG_CONFIG_HOME/diffy/state.json` (default `~/.config/diffy/state.json`) on Linux, and `%LOCALAPPDATA%/hitSlop/Diffy/config/state.json` on Windows and contain paths and viewer settings, never patches or source contents. Imported project images live beside it in `project-icons/`, named by their SHA-256 contents so matching filenames cannot overwrite other icons. Back up the folder to keep both preferences and images. Existing image references remain readable; selecting an image again copies it into managed storage. Tests inject temporary storage; `DIFFY_STATE_PATH` can override the path for isolated development sessions and also relocates the icon folder.
 
 ## Build a macOS app
 
@@ -138,11 +140,11 @@ Built with [GPUI Kit](https://gpui-kit.com/) and [Commit Mono](https://commitmon
 
 ## macOS release
 
-Diffy uses the bundle identifier `com.hitslop.diffy`. The first release targets Apple Silicon Macs running macOS 13 or later. Source code is MIT licensed; dependency and font licenses remain in effect.
+Diffy uses the bundle identifier `com.hitslop.diffy`. The macOS beta targets Apple Silicon Macs running macOS 13 or later. Windows x86-64 NSIS and Linux x86-64 AppImage alphas use the same release version. Linux initially targets Ubuntu 24.04+ with a working Vulkan driver; other distributions and ARM targets are not yet verified. Source code is MIT licensed; dependency and font licenses remain in effect.
 
 Existing preferences are migrated from `~/Library/Application Support/Differ/state.json` only when no Diffy preferences exist. The original file is retained. `DIFFY_STATE_PATH` takes precedence over the legacy `DIFFER_STATE_PATH` override; explicit overrides skip migration.
 
-Packaged builds check for updates quietly after startup. **Check for Updates…** is also available in the Diffy menu and ⌘P command palette. Updates download and verify only after clicking **Update and Restart**. Git writes finish before installation; projects and preferences survive the restart. Development binaries cannot install updates.
+Packaged builds check for updates quietly after startup. **Check for Updates…** is also available in the Diffy menu and ⌘P command palette. Updates download and verify only after clicking **Update and Restart**. Git writes finish before installation; projects and preferences survive the restart. Development binaries cannot install updates. Windows installs verified NSIS updates and relaunches; Linux replaces and relaunches the outer AppImage. Windows publisher signing is not configured for the alpha, separately from updater payload signatures. Updates require a writable installation location.
 
 See [RELEASING.md](RELEASING.md) for packaging, local signing, key backups, draft releases, and update verification.
 
@@ -155,3 +157,7 @@ DIFFY_TRACE_PATH="$PWD/target/diffy-trace.json" cargo run --locked -- /path/to/r
 ```
 
 The benchmark compares eager loading, Git metadata refresh, selected-file parsing, cached navigation, and the complete gix metadata adapter on disposable repositories. `DIFFY_BENCH_ONLY=metadata` (or `eager`, `selected_preview`, `cached_navigation`, `gix_metadata`, `gix_status_prototype`) isolates a case for memory measurements. The gix adapter benchmark fails if it falls back to Git; the earlier filename-only prototype remains a separate comparison. Traces are opt in, stay local, and contain timing spans without paths or source contents. Open them in Perfetto. gix is a runtime dependency; Criterion remains development-only.
+
+## Windows and Linux packages
+
+Native build and package checks run in `.github/workflows/desktop.yml`. See [RELEASING.md](RELEASING.md) for NSIS/AppImage packaging, updater signatures, release assembly, and validation. `directories` supplies native settings locations; `interprocess` and an OS file lock coordinate terminal requests. Windows/Linux are alpha until broader hardware testing is available.

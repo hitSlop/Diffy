@@ -54,12 +54,12 @@ pub(super) fn project_menu(
     }
     menu.separator()
         .menu_with_disabled(
-            "Open in Finder",
+            crate::project_apps::folder_label(),
             Box::new(OpenProjectIn {
                 id,
                 app: ProjectApp::Finder,
             }),
-            !local || !cfg!(target_os = "macos"),
+            !local,
         )
         .item(
             PopupMenuItem::new("Remove Project")

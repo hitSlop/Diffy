@@ -119,6 +119,18 @@ fn git_launch() -> Result<&'static GitLaunch, String> {
     );
     #[cfg(all(unix, not(target_os = "macos")))]
     paths.extend(["/usr/local/bin", "/usr/bin", "/bin"].map(PathBuf::from));
+    #[cfg(windows)]
+    {
+        paths.extend(
+            ["ProgramFiles", "ProgramFiles(x86)"]
+                .into_iter()
+                .filter_map(std::env::var_os)
+                .map(|root| PathBuf::from(root).join("Git/cmd")),
+        );
+        if let Some(dirs) = directories::BaseDirs::new() {
+            paths.push(dirs.data_local_dir().join("Programs/Git/cmd"));
+        }
+    }
     let name = if cfg!(windows) { "git.exe" } else { "git" };
     let program = paths
         .iter()
@@ -151,6 +163,11 @@ fn git_launch() -> Result<&'static GitLaunch, String> {
 fn git_command() -> Result<Command, String> {
     let launch = git_launch()?;
     let mut command = Command::new(&launch.program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW: background Git reads must not open consoles.
+    }
     if let Some(path) = &launch.path {
         command.env("PATH", path);
     }
@@ -523,13 +540,11 @@ mod tests {
 
     impl TestRepository {
         fn new() -> Self {
-            let suffix = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            let path = tempfile::Builder::new()
+                .prefix("diffy-repository-test-")
+                .tempdir()
                 .unwrap()
-                .as_nanos();
-            let path =
-                std::env::temp_dir().join(format!("differ-test-{}-{suffix}", std::process::id()));
-            std::fs::create_dir(&path).unwrap();
+                .keep();
             git(&path, &["init", "--initial-branch=main"]).unwrap();
             Self(path)
         }
@@ -654,7 +669,10 @@ mod tests {
     #[test]
     fn literal_pathspecs_and_unborn_unstage() {
         let repo = TestRepository::new();
+        #[cfg(not(windows))]
         let name = ":(glob)* [é]\t\".rs";
+        #[cfg(windows)]
+        let name = "[é] 日本語 space.rs";
         repo.write(name, "literal\n");
         repo.write("other.rs", "other\n");
         let snapshot = load(&repo.0).unwrap();
@@ -685,7 +703,14 @@ mod tests {
         repo.write("one.rs", "index\n");
         git(&repo.0, &["add", "one.rs"]).unwrap();
         repo.write("one.rs", "latest\n");
-        repo.write(":(glob)*.rs", "literal\n");
+        repo.write(
+            if cfg!(windows) {
+                "[é] space.rs"
+            } else {
+                ":(glob)*.rs"
+            },
+            "literal\n",
+        );
         repo.write("ignored.rs", "ignored\n");
         repo.write(".git/info/exclude", "ignored.rs\n");
         std::fs::remove_file(repo.0.join("delete.rs")).unwrap();
@@ -872,7 +897,14 @@ mod tests {
         git(&repo.0, &["add", "one.rs"]).unwrap();
         repo.write("one.rs", "working\n");
         git(&repo.0, &["mv", "old.rs", "new.rs"]).unwrap();
-        repo.write(":(glob)* unusual\nname.rs", "new\n");
+        repo.write(
+            if cfg!(windows) {
+                "[é] unusual name.rs"
+            } else {
+                ":(glob)* unusual\nname.rs"
+            },
+            "new\n",
+        );
         std::fs::write(repo.0.join("binary.dat"), b"\0binary").unwrap();
         let before = std::fs::read(repo.0.join(".git/index")).unwrap();
         let listing = load_metadata(&repo.0).unwrap();

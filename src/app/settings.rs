@@ -342,7 +342,13 @@ impl Diffy {
                                             div()
                                                 .text_size(px(12.))
                                                 .text_color(cx.theme().muted_foreground)
-                                                .child("Use ⌃⌘Space for the macOS emoji picker."),
+                                                .child(if cfg!(target_os = "macos") {
+                                                    "Use ⌃⌘Space for the emoji picker."
+                                                } else if cfg!(windows) {
+                                                    "Use Win+. for the emoji picker."
+                                                } else {
+                                                    "Enter or paste an emoji."
+                                                }),
                                         )
                                     })
                                     .when_some(image_path, |box_, path| {

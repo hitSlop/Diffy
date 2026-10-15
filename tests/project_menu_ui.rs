@@ -116,8 +116,11 @@ fn main() {
     }
     state::save(&prefs, &initial).unwrap();
     let launcher = Arc::new(MockLauncher::default());
-    *launcher.installed.lock().unwrap() =
-        vec![ProjectApp::Cursor, ProjectApp::ITerm, ProjectApp::Cursor];
+    *launcher.installed.lock().unwrap() = vec![
+        ProjectApp::Cursor,
+        ProjectApp::TERMINALS[0],
+        ProjectApp::Cursor,
+    ];
     let mut cx = HeadlessAppContext::with_platform(
         gpui_kit::platform::current_platform(true).text_system(),
         Arc::new(Assets),
@@ -183,9 +186,9 @@ fn main() {
             labels(window),
             [
                 "Edit Project…",
-                "Open in iTerm",
+                ProjectApp::TERMINALS[0].label(),
                 "Open in Cursor",
-                "Open in Finder",
+                diffy::project_apps::folder_label(),
                 "Remove Project"
             ]
         );
@@ -211,7 +214,11 @@ fn main() {
         window.render_frame(cx);
     })
     .unwrap();
-    for app in [ProjectApp::ITerm, ProjectApp::Cursor, ProjectApp::Finder] {
+    for app in [
+        ProjectApp::TERMINALS[0],
+        ProjectApp::Cursor,
+        ProjectApp::Finder,
+    ] {
         open_menu!();
         cx.update_window(handle, |_, window, cx| click_menu(window, app.label(), cx))
             .unwrap();
@@ -268,7 +275,11 @@ fn main() {
     cx.update_window(handle, |_, window, cx| {
         assert_eq!(
             labels(window),
-            ["Edit Project…", "Open in Finder", "Remove Project"]
+            [
+                "Edit Project…",
+                diffy::project_apps::folder_label(),
+                "Remove Project"
+            ]
         );
         click_menu(window, "Remove Project", cx);
     })

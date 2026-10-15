@@ -1,0 +1,83 @@
+name: Windows and Linux alpha checks
+on:
+  push:
+    branches: [master]
+    paths-ignore: ['site/**', '**/*.md', 'assets/screenshot.png']
+  pull_request:
+    paths-ignore: ['site/**', '**/*.md', 'assets/screenshot.png']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            platform: windows
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      CI: 'true'
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - name: Use LF checkouts and predictable Git fixtures
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux build and graphics dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config gcc g++ clang cmake libfontconfig-dev libwayland-dev libwebkit2gtk-4.1-dev libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libzstd-dev libvulkan1 mesa-vulkan-drivers xvfb xdg-utils libfuse2t64
+      - name: Check source
+        run: cargo fmt --check
+      - name: Functional tests
+        run: cargo test --locked
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --features ui-tests -- -D warnings
+      - name: Linux renderer and interaction tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test --locked --features ui-tests
+      - name: Build native executable
+        run: cargo build --locked --bins
+      - name: Linux native startup
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/smoke-desktop.py target/debug/diffy
+      - name: Windows native startup
+        if: runner.os == 'Windows'
+        run: python scripts/smoke-desktop.py target/debug/diffy.exe
+      - name: Install pinned packager
+        run: cargo install cargo-packager --version 0.11.8 --locked --root target/tools
+      - name: Package alpha
+        run: python scripts/release-desktop.py --platform ${{ matrix.platform }} --unsigned
+      - name: Validate packaged installation
+        if: runner.os == 'Windows'
+        run: python scripts/check-desktop-package.py --platform windows
+      - name: Validate Linux packaged installation and signed update
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/check-desktop-package.py --platform linux
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Diffy-${{ matrix.platform }}-x86_64-alpha-checks
+          path: |
+            dist/unsigned/${{ matrix.platform }}/
+            target/previews/
+          if-no-files-found: warn

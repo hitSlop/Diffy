@@ -152,6 +152,8 @@ impl Diffy {
             project_apps: Default::default(),
             repeat_direction: None,
             file_repeat: None,
+            native_repeat_at: None,
+            native_has_repeated: false,
             file_key_probe: keyboard::file_shortcut_pressed,
             file_scroll_remainder: 0.,
             file_scroll_axis: None,
@@ -188,7 +190,10 @@ impl Diffy {
                                     "down" => Some(1),
                                     _ => None,
                                 };
-                                if let Some(direction) = direction {
+                                if let Some(direction) = direction
+                                    && (cfg!(target_os = "macos")
+                                        || (this.file_key_probe)(direction))
+                                {
                                     cx.stop_propagation();
                                     this.start_file_repeat(direction, w, cx);
                                 }

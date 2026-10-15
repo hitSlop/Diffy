@@ -128,8 +128,11 @@ pub fn init(cx: &mut App) {
             gpui_kit::MenuItem::action("About Diffy", About),
             gpui_kit::MenuItem::action("Check for Updates…", CheckForUpdates),
             gpui_kit::MenuItem::Separator,
+            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Hide Diffy", Hide),
+            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Hide Others", HideOthers),
+            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Show All", ShowAll),
             gpui_kit::MenuItem::Separator,
             gpui_kit::MenuItem::action("Quit Diffy", Quit),
@@ -147,13 +150,14 @@ pub fn init(cx: &mut App) {
         gpui_kit::Menu::new("File").items([
             gpui_kit::MenuItem::action("Open Repository…", OpenProject),
             gpui_kit::MenuItem::action("Import Projects…", ImportProjects),
-            #[cfg(target_os = "macos")]
             gpui_kit::MenuItem::action("Install terminal command…", InstallCli),
             gpui_kit::MenuItem::action("Refresh Repository", Refresh),
         ]),
     ]);
     cx.bind_keys([
+        #[cfg(target_os = "macos")]
         KeyBinding::new("secondary-h", Hide, Some("Diffy")),
+        #[cfg(target_os = "macos")]
         KeyBinding::new("secondary-alt-h", HideOthers, Some("Diffy")),
         KeyBinding::new("secondary-p", OpenCommandPalette, Some("Diffy")),
         KeyBinding::new("secondary-o", OpenProject, Some("Diffy")),
@@ -204,6 +208,8 @@ pub struct Diffy {
     project_apps: project_menu::Runtime,
     repeat_direction: Option<isize>,
     file_repeat: Option<Task<()>>,
+    native_repeat_at: Option<std::time::Instant>,
+    native_has_repeated: bool,
     file_key_probe: fn(isize) -> bool,
     file_scroll_remainder: f32,
     file_scroll_axis: Option<files::FileScrollAxis>,
@@ -306,6 +312,15 @@ impl Render for Diffy {
             .font_features(fonts::features())
             .text_size(px(13.))
             .text_color(cx.theme().foreground)
+            .capture_key_down(cx.listener(|this, event: &gpui_kit::KeyDownEvent, _, cx| {
+                if cfg!(target_os = "macos") || this.palette_open || this.settings.is_some() || this.import.picker.is_some() { return; }
+                let modifiers = event.keystroke.modifiers;
+                if !modifiers.secondary() || modifiers.shift || modifiers.alt { return; }
+                let direction = match event.keystroke.key.as_str() { "up" => -1, "down" => 1, _ => return };
+                if (this.file_key_probe)(direction) { return; }
+                cx.stop_propagation();
+                this.native_file_key(direction, event.is_held, cx);
+            }))
             .on_key_up(cx.listener(|this, _, _, _| this.stop_file_repeat()))
             .on_modifiers_changed(cx.listener(|this, event: &gpui_kit::ModifiersChangedEvent, _, _| {
                 this.reset_file_scroll_unless_command(event);
@@ -373,6 +388,9 @@ impl Render for Diffy {
                 if this.updates.blocks_mutations() { return; }
                 this.exit(None, cx);
             }))
+            .when(!cfg!(target_os = "macos") && matches!(window.window_decorations(), gpui_kit::Decorations::Client { .. }), |root| {
+                root.child(gpui_kit::component::TitleBar::new())
+            })
             .child(self.file_scroll_layer(cx))
             .children(self.state_error.as_ref().map(|error| {
                 div()

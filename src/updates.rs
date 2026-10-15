@@ -12,6 +12,70 @@ pub const ENDPOINT: &str =
     "https://github.com/hitSlop/diffy/releases/latest/download/update-macos-aarch64.json";
 pub const PUBLIC_KEY: &str = include_str!("../packaging/updater.pub");
 
+#[derive(Clone, Copy, Debug)]
+pub struct Target {
+    pub id: &'static str,
+    pub endpoint: &'static str,
+    pub format: UpdateFormat,
+}
+impl Target {
+    pub fn for_platform(os: &str, arch: &str) -> Option<Self> {
+        match (os, arch) {
+            ("macos", "aarch64") => Some(Self {
+                id: "macos-aarch64",
+                endpoint: ENDPOINT,
+                format: UpdateFormat::App,
+            }),
+            ("windows", "x86_64") => Some(Self {
+                id: "windows-x86_64",
+                endpoint: "https://github.com/hitSlop/diffy/releases/latest/download/update-windows-x86_64.json",
+                format: UpdateFormat::Nsis,
+            }),
+            ("linux", "x86_64") => Some(Self {
+                id: "linux-x86_64",
+                endpoint: "https://github.com/hitSlop/diffy/releases/latest/download/update-linux-x86_64.json",
+                format: UpdateFormat::AppImage,
+            }),
+            _ => None,
+        }
+    }
+    pub fn current() -> Option<Self> {
+        Self::for_platform(std::env::consts::OS, std::env::consts::ARCH)
+    }
+}
+
+pub fn launch_executable() -> Result<PathBuf, String> {
+    #[cfg(target_os = "linux")]
+    if let Some(path) = std::env::var_os("APPIMAGE") {
+        return Ok(PathBuf::from(path));
+    }
+    std::env::current_exe().map_err(|e| e.to_string())
+}
+fn installation_path() -> Result<PathBuf, String> {
+    let executable = launch_executable()?;
+    #[cfg(target_os = "macos")]
+    return bundle_path(&executable)
+        .ok_or("Install Diffy.app in Applications to use automatic updates.".into());
+    #[cfg(target_os = "windows")]
+    {
+        if !matches!(env!("DIFFY_PACKAGE_KIND"), "nsis")
+            || !executable
+                .parent()
+                .is_some_and(|parent| parent.join("diffy-cli.exe").is_file())
+        {
+            return Err(
+                "Install Diffy using its Windows installer to use automatic updates.".into(),
+            );
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPIMAGE").is_none() {
+        return Err("Use the packaged Diffy AppImage to install updates.".into());
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(executable)
+}
+
 pub trait Package: Send + Sync {
     fn download(&self, progress: &dyn Fn(usize, Option<u64>)) -> Result<Vec<u8>, String>;
     fn install(&self, bytes: Vec<u8>) -> Result<(), String>;
@@ -108,14 +172,16 @@ pub fn bundle_path(executable: &Path) -> Option<PathBuf> {
         .then(|| bundle.to_path_buf())
 }
 pub fn installation_problem() -> Option<String> {
-    if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        return Some("Updates currently support Apple Silicon Macs only.".into());
+    if Target::current().is_none() {
+        return Some("Updates aren't available for this platform or architecture.".into());
     }
-    let bundle = std::env::current_exe().ok().and_then(|p| bundle_path(&p));
-    let Some(bundle) = bundle else {
-        return Some("Install Diffy.app in Applications to use automatic updates.".into());
+    let bundle = match installation_path() {
+        Ok(path) => path,
+        Err(error) => return Some(error),
     };
-    if bundle.to_string_lossy().contains("AppTranslocation") || bundle.starts_with("/Volumes") {
+    if cfg!(target_os = "macos")
+        && (bundle.to_string_lossy().contains("AppTranslocation") || bundle.starts_with("/Volumes"))
+    {
         return Some("Move Diffy.app to Applications and reopen it before updating.".into());
     }
     let Some(parent) = bundle.parent() else {
@@ -125,17 +191,15 @@ pub fn installation_problem() -> Option<String> {
     let probe = parent.join(format!(".diffy-write-check-{}", std::process::id()));
     match std::fs::OpenOptions::new().write(true).create_new(true).open(&probe) {
         Ok(_) => { let _ = std::fs::remove_file(probe); None }
-        Err(_) => Some("Diffy can't update this read-only location. Install it in a writable Applications folder.".into()),
+        Err(_) => Some("Diffy can't update this read-only location. Move it to a writable installation location.".into()),
     }
 }
 
 struct GithubBackend;
 impl Backend for GithubBackend {
     fn check(&self) -> Result<Option<Release>, String> {
-        let bundle = std::env::current_exe()
-            .ok()
-            .and_then(|p| bundle_path(&p))
-            .ok_or("Install Diffy.app in Applications to check for updates.")?;
+        let bundle = installation_path()?;
+        let target = Target::current().ok_or("Unsupported update target")?;
         let _ = rustls::crypto::ring::default_provider().install_default();
         let response = reqwest::blocking::Client::builder()
             .https_only(true)
@@ -143,7 +207,7 @@ impl Backend for GithubBackend {
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|e| e.to_string())?
-            .get(ENDPOINT)
+            .get(target.endpoint)
             .header("Accept", "application/json")
             .header("User-Agent", concat!("Diffy/", env!("CARGO_PKG_VERSION")))
             .send()
@@ -163,10 +227,14 @@ impl Backend for GithubBackend {
         if bytes.len() > 1_048_576 {
             return Err("Update manifest is too large.".into());
         }
-        release_from_manifest(&bytes, bundle)
+        release_for_target(&bytes, bundle, target)
     }
 }
-fn release_from_manifest(bytes: &[u8], bundle: PathBuf) -> Result<Option<Release>, String> {
+fn release_for_target(
+    bytes: &[u8],
+    bundle: PathBuf,
+    target: Target,
+) -> Result<Option<Release>, String> {
     let release: RemoteRelease =
         serde_json::from_slice(bytes).map_err(|e| format!("Invalid update manifest: {e}"))?;
     if release.version
@@ -176,38 +244,42 @@ fn release_from_manifest(bytes: &[u8], bundle: PathBuf) -> Result<Option<Release
     {
         return Ok(None);
     }
-    let target = "macos-aarch64";
     let download_url = release
-        .download_url(target)
+        .download_url(target.id)
         .map_err(|e| e.to_string())?
         .clone();
     if download_url.scheme() != "https" {
         return Err("Update downloads must use HTTPS.".into());
     }
-    let format = release.format(target).map_err(|e| e.to_string())?;
-    if !matches!(format, UpdateFormat::App) {
-        return Err("The update isn't a macOS app bundle.".into());
+    let format = release.format(target.id).map_err(|e| e.to_string())?;
+    if std::mem::discriminant(&format) != std::mem::discriminant(&target.format) {
+        return Err(format!("The update package doesn't match {}.", target.id));
     }
     let signature = release
-        .signature(target)
+        .signature(target.id)
         .map_err(|e| e.to_string())?
         .clone();
     let version = release.version.to_string();
     let update = Update {
         config: Config {
             endpoints: vec![
-                ENDPOINT
+                target
+                    .endpoint
                     .parse()
                     .map_err(|e| format!("Invalid update endpoint: {e}"))?,
             ],
             pubkey: PUBLIC_KEY.trim().into(),
+            windows: Some(cargo_packager_updater::WindowsConfig {
+                installer_args: Some(vec!["/R".into()]),
+                ..Default::default()
+            }),
             ..Default::default()
         },
         body: release.notes,
         current_version: VERSION.into(),
         version: version.clone(),
         date: release.pub_date,
-        target: target.into(),
+        target: target.id.into(),
         extract_path: bundle,
         download_url,
         signature,
@@ -290,7 +362,39 @@ impl Package for Update {
                 }
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        {
+            // Spawn the verified installer directly. The dependency's Windows
+            // adapter routes through PowerShell and panics on spawn failure;
+            // this boundary preserves a recoverable error and literal arguments.
+            use std::{io::Write as _, os::windows::process::CommandExt as _};
+            let mut file = tempfile::Builder::new()
+                .suffix(".exe")
+                .tempfile()
+                .map_err(|e| e.to_string())?;
+            file.write_all(&bytes).map_err(|e| e.to_string())?;
+            file.as_file().sync_all().map_err(|e| e.to_string())?;
+            let (handle, path) = file.keep().map_err(|e| e.to_string())?;
+            drop(handle);
+            let arguments = self
+                .config
+                .windows
+                .as_ref()
+                .and_then(|windows| windows.installer_args.as_ref());
+            let result = std::process::Command::new(&path)
+                .arg("/P")
+                .args(arguments.into_iter().flatten())
+                .creation_flags(0x08000000)
+                .spawn();
+            if let Err(error) = result {
+                let _ = std::fs::remove_file(path);
+                return Err(format!("Couldn't start the update installer: {error}"));
+            }
+            // The installer replaces the running image and relaunches with /R.
+            // The UI has flushed settings and waited for Git writes before here.
+            std::process::exit(0);
+        }
+        #[cfg(all(not(target_os = "macos"), not(windows)))]
         Update::install(self, bytes).map_err(|e| format!("Couldn't install the update: {e}"))
     }
 }
@@ -298,6 +402,34 @@ impl Package for Update {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn release_from_manifest(bytes: &[u8], bundle: PathBuf) -> Result<Option<Release>, String> {
+        release_for_target(
+            bytes,
+            bundle,
+            Target::for_platform("macos", "aarch64").unwrap(),
+        )
+    }
+    #[test]
+    fn platform_packages_are_selected_and_mismatches_rejected() {
+        for (os, arch, format) in [
+            ("macos", "aarch64", "app"),
+            ("windows", "x86_64", "nsis"),
+            ("linux", "x86_64", "appimage"),
+        ] {
+            let target = Target::for_platform(os, arch).unwrap();
+            let manifest = serde_json::to_vec(&serde_json::json!({"version":"99.0.0", "platforms":{target.id:{"url":"https://example.com/update", "format":format, "signature":"fixture"}}})).unwrap();
+            assert!(
+                release_for_target(&manifest, PathBuf::from("fixture"), target)
+                    .unwrap()
+                    .is_some()
+            );
+            let wrong =
+                Target::for_platform(if os == "linux" { "windows" } else { "linux" }, "x86_64")
+                    .unwrap();
+            assert!(release_for_target(&manifest, PathBuf::from("fixture"), wrong).is_err());
+        }
+        assert!(Target::for_platform("windows", "aarch64").is_none());
+    }
     struct FakePackage;
     impl Package for FakePackage {
         fn download(&self, progress: &dyn Fn(usize, Option<u64>)) -> Result<Vec<u8>, String> {

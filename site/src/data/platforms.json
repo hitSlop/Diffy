@@ -1,0 +1,41 @@
+[
+  {
+    "id": "macos",
+    "name": "macOS",
+    "stage": "Beta",
+    "requirements": "Apple Silicon · macOS 13+",
+    "asset": "Diffy-macos-aarch64.dmg",
+    "steps": [
+      "Open the downloaded DMG.",
+      "Drag Diffy into Applications.",
+      "Open Diffy and choose a Git project."
+    ],
+    "note": "Choose File → Install terminal command to use diffy . from your terminal."
+  },
+  {
+    "id": "windows",
+    "name": "Windows",
+    "stage": "Alpha",
+    "requirements": "64-bit Intel / AMD · Windows 10+",
+    "asset": "Diffy-windows-x86_64-setup.exe",
+    "steps": [
+      "Run the downloaded installer.",
+      "Install for your user; administrator access is not required.",
+      "Open Diffy and choose a Git project."
+    ],
+    "note": "This alpha has no Windows publisher signature. Windows may show an unknown-publisher warning. Only install a download you trust."
+  },
+  {
+    "id": "linux",
+    "name": "Linux",
+    "stage": "Alpha",
+    "requirements": "x86-64 · Ubuntu 24.04+ · Wayland or X11 · Vulkan driver",
+    "asset": "Diffy-linux-x86_64.AppImage",
+    "steps": [
+      "Keep the AppImage in a writable folder.",
+      "Make it executable: chmod +x Diffy-linux-x86_64.AppImage",
+      "Run the AppImage and choose a Git project."
+    ],
+    "note": "If FUSE is unavailable, run the AppImage with --appimage-extract-and-run. Other distributions are not yet verified."
+  }
+]

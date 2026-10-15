@@ -19,6 +19,28 @@
   --muted: #929297;
   --quiet: #737379;
 }
+.beta-price { font-size: 14px; margin: 0 0 16px; color: var(--muted); }
+.beta-price s { margin-right: 10px; }
+.beta-price strong { font-size: 22px; font-weight: 500; color: #fff; }
+.platform-downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; margin: 48px 0; text-align: left; }
+.platform-download { min-width: 0; padding-top: 20px; border-top: 1px solid #303033; scroll-margin-top: 24px; }
+.platform-heading { display: flex; align-items: center; gap: 12px; }
+.download-page .platform-heading h2 { font-size: 19px; font-weight: 500; margin: 0; }
+.release-badge { color: #e4ed64; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.release-badge.alpha { color: #ffb47a; }
+.platform-download .compatibility { min-height: 42px; font-size: 11px; line-height: 1.8; margin: 14px 0 22px; }
+.platform-download .button { font-size: 12px; width: 100%; justify-content: center; }
+.download-note, .install-details { font-size: 12px; color: var(--muted); line-height: 1.9; }
+.download-note { margin: 20px 0 40px; }
+.platform-download .download-note { margin: 12px 0 0; font-size: 11px; }
+.install-details { margin-top: 22px; overflow-wrap: anywhere; }
+.install-details summary { cursor: pointer; color: #fff; }
+.install-details summary:focus-visible { outline: 2px solid #e4ed64; outline-offset: 5px; }
+.install-details ol { padding-left: 20px; }
+@media (max-width: 850px) {
+  .platform-downloads { grid-template-columns: 1fr; gap: 28px; max-width: 520px; margin-inline: auto; }
+  .platform-download .compatibility { min-height: 0; }
+}
 * {
   box-sizing: border-box;
 }

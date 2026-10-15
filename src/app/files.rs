@@ -493,7 +493,25 @@ impl Diffy {
     }
     pub(super) fn stop_file_repeat(&mut self) {
         self.repeat_direction = None;
+        self.native_repeat_at = None;
+        self.native_has_repeated = false;
         self.file_repeat = None;
+    }
+    pub(super) fn native_file_key(&mut self, direction: isize, held: bool, cx: &mut Context<Self>) {
+        let now = std::time::Instant::now();
+        let delay = Duration::from_millis(if self.native_has_repeated { 200 } else { 320 });
+        if held
+            && self.repeat_direction == Some(direction)
+            && self
+                .native_repeat_at
+                .is_some_and(|last| now.duration_since(last) < delay)
+        {
+            return;
+        }
+        self.native_has_repeated = held && self.repeat_direction == Some(direction);
+        self.repeat_direction = Some(direction);
+        self.native_repeat_at = Some(now);
+        self.move_file(direction, cx);
     }
     /// Capture runs before the diff list applies the wheel, so stopping the
     /// event here keeps Command+scroll on the file list.

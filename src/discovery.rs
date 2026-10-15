@@ -389,7 +389,10 @@ impl Scanner {
                 break;
             }
             // Windows named pipes do not appear in the filesystem.
-            let live = (cfg!(windows) || socket.exists()) && Instant::now() < deadline;
+            let named_pipe = cfg!(windows)
+                && (socket.to_string_lossy().starts_with(r"\\.\pipe\")
+                    || locations.socket.as_ref() == Some(&socket));
+            let live = (named_pipe || socket.exists()) && Instant::now() < deadline;
             let result = if live {
                 read_herdr_socket(
                     &socket,
@@ -652,6 +655,7 @@ fn read_herdr_socket(
         } else {
             let mut chunk = [0; 8192];
             match stream.read(&mut chunk) {
+                Ok(0) if cfg!(windows) => {}
                 Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
                 Ok(n) => {
                     reply.extend_from_slice(&chunk[..n]);

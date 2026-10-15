@@ -152,19 +152,19 @@ fn main() {
     dispatch(&mut cx, Box::new(app::PreviousProject));
     wait(&mut cx);
     let main_id = cx.update(|cx| view.read(cx).active_project_id().unwrap());
-    cx.update_window(handle, |_, window, cx| window.press("cmd-right", cx))
+    cx.update_window(handle, |_, window, cx| window.press("secondary-right", cx))
         .unwrap();
     wait(&mut cx);
     let linked_id = cx.update(|cx| view.read(cx).active_project_id().unwrap());
     assert_ne!(main_id, linked_id);
-    cx.update_window(handle, |_, window, cx| window.press("cmd-left", cx))
+    cx.update_window(handle, |_, window, cx| window.press("secondary-left", cx))
         .unwrap();
     wait(&mut cx);
     assert_eq!(
         cx.update(|cx| view.read(cx).active_project_id()),
         Some(main_id)
     );
-    cx.update_window(handle, |_, window, cx| window.press("cmd-left", cx))
+    cx.update_window(handle, |_, window, cx| window.press("secondary-left", cx))
         .unwrap();
     wait(&mut cx);
     assert_eq!(
@@ -173,14 +173,14 @@ fn main() {
         "Previous worktree wraps from the main checkout"
     );
     cx.update_window(handle, |_, window, cx| {
-        window.press("cmd-f", cx);
+        window.press("secondary-f", cx);
     })
     .unwrap();
     cx.run_until_parked();
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
         window.input("selected", cx);
-        window.press("cmd-left", cx);
+        window.press("secondary-left", cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -190,7 +190,7 @@ fn main() {
         "Command-left moves the cursor in a text input"
     );
     cx.update_window(handle, |_, window, cx| {
-        window.press("cmd-right", cx);
+        window.press("secondary-right", cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -206,7 +206,7 @@ fn main() {
     cx.run_until_parked();
     cx.update_window(handle, |_, window, cx| {
         window.render_frame(cx);
-        window.press("cmd-right", cx);
+        window.press("secondary-right", cx);
     })
     .unwrap();
     wait(&mut cx);
@@ -215,7 +215,7 @@ fn main() {
         Some(main_id),
         "Next worktree wraps while the diff has focus"
     );
-    cx.update_window(handle, |_, window, cx| window.press("cmd-right", cx))
+    cx.update_window(handle, |_, window, cx| window.press("secondary-right", cx))
         .unwrap();
     wait(&mut cx);
     dispatch(&mut cx, Box::new(app::StageAll));
@@ -366,9 +366,9 @@ fn main() {
                 .any(|s| s.label() == Some("Project") && s.selected() == Some(true)),
             "Main project selection survives restart"
         );
-        window.press("cmd-right", cx);
+        window.press("secondary-right", cx);
         window.render_frame(cx);
-        window.press("cmd-right", cx);
+        window.press("secondary-right", cx);
         window.render_frame(cx);
     })
     .unwrap();

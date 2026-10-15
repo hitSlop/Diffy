@@ -1,6 +1,6 @@
 # Releasing Diffy
 
-The initial release is macOS 13+, Apple Silicon only. App identity: `com.hitslop.diffy`; repository: https://github.com/hitSlop/diffy. The workspace can remain named `differ`.
+The macOS beta supports macOS 13+ on Apple Silicon. Windows x86-64 and Linux x86-64 are early alphas with limited hardware testing. All platforms share the same numeric version and signing trust; Beta/Alpha are maturity labels, not GitHub prerelease flags. App identity: `com.hitslop.diffy`; repository: https://github.com/hitSlop/diffy. The workspace can remain named `differ`.
 
 ## Build and validate
 
@@ -82,3 +82,44 @@ cargo test --locked --test update_archive signed_app_archive_installs_and_relaun
 Production checks and downloads require HTTPS. This offline fixture operates exclusively on temporary app copies, verifies the signed archive before installation, and confirms the installed executable launches. It never replaces the user's app or edits their preferences.
 
 The signed-archive exercise is ignored in routine checks and requires its archive and signature when invoked explicitly. The release script invokes it with the exact release version. To exercise a historical signed archive, set `DIFFY_TEST_UPDATE_VERSION` to its expected version; otherwise the current Cargo version is required.
+
+## Windows and Linux native builds
+
+Use Rust 1.92+ and the native toolchain. Windows requires Visual Studio 2022 C++ Build Tools, a Windows SDK, CMake, and the MSVC Rust target. The build script embeds the supplied icon; GPUI supplies the Windows manifest. Windows installers are per-user NSIS packages and are not publisher-signed for the alpha. Updater payload signatures remain required.
+
+On Ubuntu 24.04, install the GPUI toolchain and runtime dependencies:
+
+```sh
+sudo apt-get install -y pkg-config gcc g++ clang cmake libfontconfig-dev libwayland-dev libwebkit2gtk-4.1-dev libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libzstd-dev libvulkan1 mesa-vulkan-drivers xvfb xdg-utils libfuse2t64
+cargo install cargo-packager --version 0.11.8 --locked --root target/tools
+```
+
+Run the corresponding command on each native operating system (Windows uses `python`):
+
+```sh
+python scripts/release-desktop.py --platform windows --unsigned
+python3 scripts/release-desktop.py --platform linux --unsigned
+```
+
+The CI workflow runs native functional tests and Clippy, Linux offscreen renderer/interaction tests, native startup smoke tests, package installation/reinstallation checks, and CLI Git access. The pinned GPUI snapshot has no Windows headless screenshot renderer; the Windows native startup smoke opens a real demo window and draws a frame. This does not replace hardware QA. CI installer checks run only on disposable runners. Windows-safe Unicode/spaced filenames replace Unix-only filename fixtures on Windows.
+
+Unsigned-check artifacts are under `dist/unsigned/windows` and `dist/unsigned/linux`. Windows outputs the versioned NSIS installer plus `Diffy-windows-x86_64-setup.exe`; Linux outputs the versioned AppImage plus `Diffy-linux-x86_64.AppImage`. Each directory includes source-tree/version/checksum metadata. Terminal launchers and dependency notices are packaged alongside the app.
+
+## Assemble a complete release
+
+Build all three platforms from the same clean source tree and version. Download the successful Windows/Linux CI package artifacts, retaining their `build-*.json` files. Build the signed/notarized macOS release locally with the existing script, then assemble:
+
+```sh
+python3 scripts/release-macos.py
+python3 scripts/assemble-release.py --macos dist/release --windows /path/to/windows-artifact --linux /path/to/linux-artifact
+```
+
+Assembly rejects version, target, source-tree, or package-digest mismatches. It preserves the notarized macOS assets, signs the exact Windows installer and raw Linux AppImage with the existing updater key, writes per-platform manifests and one combined `SHA256SUMS`. It does not publish anything. Standalone native releases can omit `--unsigned` when the same signing key/public-key file is available; `DIFFY_UPDATER_KEY` and `DIFFY_UPDATER_PASSWORD` select it without committing secrets.
+
+The current Linux updater installs raw AppImage bytes: do not point its manifest at a `.tar.gz`. AppImage restart and terminal installation use the outer `APPIMAGE` path, never the executable inside its temporary mount. Windows waits for Git writes and flushes preferences before the updater starts its installer and exits; `/R` makes the verified NSIS installer relaunch Diffy. Windows installer failures are handled by the installer, rather than promising the same bundle rollback as macOS.
+
+Create a normal **draft** GitHub release for the next version after the complete source and package checks pass. Include every asset named by the combined checksums file and that file itself. Keep the existing `update-macos-aarch64.json` endpoint and fixed macOS DMG alias. New assets include `update-windows-x86_64.json`, `update-linux-x86_64.json`, and their signed packages. Ordinary published releases preserve `/releases/latest`; draft releases remain invisible to update checks.
+
+Only after publication and download verification, set the site's `DIFFY_RELEASED_PLATFORMS` repository variable to `macos,windows,linux` and rebuild/deploy. Default `macos` keeps the new links unavailable. See `site/README.md` for the $14.99 Dodo product and shared post-purchase delivery setup.
+
+Before promoting Windows/Linux from alpha, collect real hardware checks for rendering, clipboard, dialogs, held-key navigation, editor/terminal launch, window controls, and installation/update/restart. Intel Mac, ARM Windows/Linux, `.deb`, and broader Linux compatibility remain outside this release.

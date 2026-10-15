@@ -120,11 +120,11 @@ fn main() {
         "Row utilities do not select another file"
     );
     cx.update_window(handle, |_, window, cx| {
-        window.press("cmd-=", cx);
+        window.press("secondary-=", cx);
         assert_eq!(view.read(cx).reader_settings().font_size, 14.);
-        window.press("cmd-0", cx);
+        window.press("secondary-0", cx);
         assert_eq!(view.read(cx).reader_settings().font_size, 13.);
-        window.press("cmd-shift-=", cx);
+        window.press("secondary-shift-=", cx);
         assert_eq!(view.read(cx).reader_settings().font_size, 14.);
     })
     .unwrap();

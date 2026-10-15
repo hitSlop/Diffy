@@ -113,11 +113,8 @@ mod tests {
     use super::*;
     #[test]
     fn newest_save_wins_and_flush_observes_errors() {
-        let root = std::env::temp_dir().join(format!(
-            "diffy-writer-{}-{:?}",
-            std::process::id(),
-            std::time::SystemTime::now()
-        ));
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path();
         let path = root.join("state.json");
         let writer = Writer::new(path.clone()).unwrap();
         for width in 240..460 {

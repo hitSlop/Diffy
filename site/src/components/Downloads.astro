@@ -1,0 +1,16 @@
+---
+import { platforms } from '../data/releases';
+---
+<div class="platform-downloads">
+  {platforms.map(platform => (
+    <section id={platform.id} class="platform-download" aria-labelledby={`${platform.id}-title`}>
+      <div class="platform-heading"><h2 id={`${platform.id}-title`}>{platform.name}</h2><span class:list={['release-badge', { alpha: platform.stage === 'Alpha' }]}>{platform.stage}</span></div>
+      <p class="compatibility">{platform.requirements}</p>
+      {platform.available
+        ? <a class="button" href={platform.href}>Download for {platform.name} <span aria-hidden="true">↓</span></a>
+        : <button class="button" disabled aria-describedby={`${platform.id}-unavailable`}>{platform.name} alpha coming soon</button>}
+      {!platform.available && <p id={`${platform.id}-unavailable`} class="download-note">The download will be available after release checks pass.</p>}
+      <details class="install-details"><summary>Installation & requirements</summary><ol>{platform.steps.map(step => <li>{step}</li>)}</ol><p>{platform.note}</p></details>
+    </section>
+  ))}
+</div>
