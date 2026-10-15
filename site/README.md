@@ -50,7 +50,7 @@ Associate `diffy.hitslop.com` in the Pages project's custom domains, then point 
 
 The post-build `scripts/write-redirects.mjs` generates `dist/_redirects` from the same platform metadata used by the pages. `/download` retains its macOS behavior. `/download/macos`, `/download/windows`, and `/download/linux` use fixed-name assets in GitHub's latest release; unavailable targets redirect to `/downloads` instead. The release script creates an identical copy of the signed and notarized versioned DMG. Upload it with every release; never point the website at an unsigned build.
 
-The bundled web font uses the same Commit Mono v143 font as Diffy, under the included SIL Open Font License. The screenshot is stored losslessly as WebP. The mascot and social preview derive from existing project assets.
+The bundled web font uses the same Commit Mono v143 font as Diffy, under the included SIL Open Font License. The screenshot is stored losslessly as WebP. Open Graph and Twitter link previews use the same meme as the hero, from `src/assets/hero.png`.
 
 The screenshot serves 480/960/1440px variants through `srcset`; the original 1920px image remains the full-resolution fallback and zoom link. Pointer motion is coalesced so the eye controller reads geometry at most once per animation frame.
 

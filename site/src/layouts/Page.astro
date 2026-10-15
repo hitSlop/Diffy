@@ -1,7 +1,10 @@
 ---
 import '../styles/site.css';
+import socialImage from '../assets/hero.png';
 const { title = 'Diffy — a native Git diff viewer, in beta', description = 'Review live Git diffs in a native app built in Rust. macOS beta; Windows and Linux alpha. $14.99 during beta, regular price $24.99. One purchase supports all platforms.' } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const socialImageUrl = new URL(socialImage.src, Astro.site);
+const socialImageAlt = 'A tearful developer at a keyboard says, “thank you for changing my life.” Diffy’s colorful chameleon replies, “i literally only show you diffs.”';
 ---
 <!doctype html>
 <html lang="en">
@@ -18,12 +21,14 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:image" content="https://diffy.hitslop.com/social.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Diffy’s black interface showing a split Git diff" />
+    <meta property="og:image" content={socialImageUrl} />
+    <meta property="og:image:width" content={socialImage.width} />
+    <meta property="og:image:height" content={socialImage.height} />
+    <meta property="og:image:alt" content={socialImageAlt} />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@hitslop" />
+    <meta name="twitter:image" content={socialImageUrl} />
+    <meta name="twitter:image:alt" content={socialImageAlt} />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
