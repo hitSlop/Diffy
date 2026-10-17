@@ -25,6 +25,7 @@ struct FakeGitHub {
     revision: AtomicUsize,
     calls: AtomicUsize,
     large: AtomicBool,
+    list_calls: AtomicUsize,
 }
 fn pr(number: u64, revision: usize) -> PullRequest {
     PullRequest {
@@ -42,6 +43,8 @@ fn pr(number: u64, revision: usize) -> PullRequest {
 }
 impl Backend for FakeGitHub {
     fn list(&self, repo: &Repository, page: u32) -> Result<Page, String> {
+        self.list_calls.fetch_add(1, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(30));
         if self.fail.load(Ordering::Relaxed) {
             return Err("Fixture authentication failed · Retry".into());
         }
@@ -62,6 +65,7 @@ impl Backend for FakeGitHub {
     }
     fn diff(&self, _: &Repository, number: u64) -> Result<PullDiff, String> {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(30));
         if self.delayed.load(Ordering::Relaxed) && number == 2 {
             let deadline = std::time::Instant::now() + Duration::from_secs(10);
             while !self.release.load(Ordering::Relaxed) && std::time::Instant::now() < deadline {
@@ -94,6 +98,7 @@ fn main() {
     repo.write("local.txt", "local change\n");
     let index = std::fs::read(repo.0.join(".git/index")).unwrap();
     let backend = Arc::new(FakeGitHub::default());
+    std::fs::create_dir_all("target/previews").unwrap();
     let mut cx = HeadlessAppContext::with_platform(
         gpui_kit::platform::current_platform(true).text_system(),
         Arc::new(Assets),
@@ -174,12 +179,29 @@ fn main() {
         w.render_frame(cx);
         w.click("source-prs", cx);
         w.render_frame(cx);
+        assert_eq!(
+            w.find("pr-loading-status").label(),
+            Some("Loading pull requests…")
+        );
+        assert!(w.try_find("pr-loading-empty").is_some());
+        w.click("refresh", cx);
+        w.click("refresh", cx);
     })
     .unwrap();
+    cx.capture_screenshot(handle)
+        .unwrap()
+        .save("target/previews/diffy-github-loading.png")
+        .unwrap();
     wait!();
     cx.update_window(handle, |_, w, cx| {
         w.render_frame(cx);
         assert_eq!(view.read(cx).github_selected(), Some(1));
+        assert_eq!(
+            backend.list_calls.load(Ordering::Relaxed),
+            1,
+            "Repeated refresh clicks must not duplicate the initial list request"
+        );
+        assert!(w.try_find("pr-loading-status").is_none());
         assert_eq!(
             view.read(cx).selected_file().unwrap().as_ref(),
             "src/review.rs"
@@ -221,6 +243,8 @@ fn main() {
         assert!(w.try_find("choose-pr-1").is_none());
         w.click("choose-pr-2", cx);
         w.render_frame(cx);
+        assert_eq!(w.find("pr-loading-status").label(), Some("Loading diff…"));
+        assert!(w.try_find("pr-loading-empty").is_some());
     })
     .unwrap();
     wait!();
@@ -273,6 +297,13 @@ fn main() {
     cx.update_window(handle, |_, w, cx| {
         w.click("pr-load-more", cx);
         w.render_frame(cx);
+        assert_eq!(w.find("pr-load-more").label(), Some("Loading more…"));
+        assert_eq!(w.find("pr-loading-status").label(), Some("Loading more…"));
+        assert_eq!(
+            view.read(cx).selected_preview_path().unwrap().as_ref(),
+            "src/review.rs"
+        );
+        w.click("pr-load-more", cx);
     })
     .unwrap();
     wait!();
@@ -288,6 +319,18 @@ fn main() {
     cx.update_window(handle, |_, w, cx| {
         w.click("refresh", cx);
         w.render_frame(cx);
+        assert_eq!(
+            w.find("pr-loading-status").label(),
+            Some("Refreshing pull requests…")
+        );
+        assert_eq!(view.read(cx).github_selected(), Some(3));
+        assert_eq!(
+            view.read(cx).selected_preview_path().unwrap().as_ref(),
+            "src/review.rs"
+        );
+        assert!(w.try_find("pr-loading-empty").is_none());
+        w.click("refresh", cx);
+        w.dispatch_action(Box::new(app::Refresh), cx);
     })
     .unwrap();
     wait!();
@@ -308,6 +351,10 @@ fn main() {
     cx.update_window(handle, |_, w, cx| {
         w.click("source-worktrees", cx);
         w.render_frame(cx);
+        assert!(
+            w.try_find("pr-loading-status").is_none(),
+            "Cancelled PR requests must not leave a loading indicator in Worktrees"
+        );
     })
     .unwrap();
     backend.release.store(true, Ordering::Relaxed);
@@ -326,6 +373,10 @@ fn main() {
     cx.update_window(handle, |_, w, cx| {
         w.render_frame(cx);
         assert!(w.try_find("retry").is_some());
+        assert!(
+            w.try_find("pr-loading-status").is_none(),
+            "Errors must clear loading feedback"
+        );
         backend.fail.store(false, Ordering::Relaxed);
         w.click("retry", cx);
         w.render_frame(cx);

@@ -45,6 +45,7 @@ pub(super) struct State {
     pub more: bool,
     pub listing: bool,
     pub loading: bool,
+    list_request: Option<ListRequest>,
     pub error: Option<String>,
     pub view: ReviewView,
     pub cache_root: Option<PathBuf>,
@@ -56,7 +57,28 @@ pub(super) struct State {
     menu_search: Entity<InputState>,
     subscriptions: Vec<Subscription>,
 }
+#[derive(Clone, Copy)]
+enum ListRequest {
+    Initial,
+    Refresh,
+    More,
+}
 impl State {
+    pub(super) fn loading_message(&self) -> Option<&'static str> {
+        if !self.remote_mode {
+            return None;
+        }
+        match self.list_request {
+            Some(ListRequest::Initial) => Some("Loading pull requests…"),
+            Some(ListRequest::Refresh) => Some("Refreshing pull requests…"),
+            Some(ListRequest::More) => Some("Loading more…"),
+            None if self.loading => Some("Loading diff…"),
+            None => None,
+        }
+    }
+    fn loading_more(&self) -> bool {
+        matches!(self.list_request, Some(ListRequest::More))
+    }
     pub(super) fn add_subscription(&mut self, subscription: Subscription) {
         self.subscriptions.push(subscription);
     }
@@ -79,6 +101,7 @@ impl State {
             more: false,
             listing: false,
             loading: false,
+            list_request: None,
             error: None,
             view: ReviewView::new(cx),
             cache_root: None,
@@ -97,6 +120,7 @@ impl State {
         self.list_task = None;
         self.diff_task = None;
         self.listing = false;
+        self.list_request = None;
         self.loading = false;
         self.view.suspend(cx);
     }
@@ -244,6 +268,13 @@ impl Diffy {
         s.list_generation += 1;
         let generation = s.list_generation;
         s.listing = true;
+        s.list_request = Some(if more {
+            ListRequest::More
+        } else if s.page == 0 {
+            ListRequest::Initial
+        } else {
+            ListRequest::Refresh
+        });
         s.error = None;
         let backend = self.github.backend.clone();
         s.list_task = Some(cx.spawn(async move |owner, cx| {
@@ -277,6 +308,7 @@ impl Diffy {
                     return;
                 }
                 s.listing = false;
+                s.list_request = None;
                 s.list_task = None;
                 match result {
                     Ok((result, loaded_page)) => {
@@ -643,7 +675,12 @@ impl Diffy {
                     Button::new("pr-load-more")
                         .ghost()
                         .small()
-                        .label("Load more")
+                        .label(if s.loading_more() {
+                            "Loading more…"
+                        } else {
+                            "Load more"
+                        })
+                        .loading(s.loading_more())
                         .disabled(s.listing)
                         .on_click(cx.listener(|this, _, _, cx| this.list_prs(true, cx))),
                 )

@@ -8,6 +8,7 @@ use gpui_kit::InteractiveElement as _;
 use gpui_kit::IntoElement;
 use gpui_kit::MouseButton;
 use gpui_kit::ParentElement as _;
+use gpui_kit::StatefulInteractiveElement as _;
 use gpui_kit::Styled as _;
 use gpui_kit::Window;
 use gpui_kit::base::TestSupportExt as _;
@@ -25,6 +26,7 @@ use gpui_kit::component::diff::DiffMode;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::menu::ContextMenuExt as _;
+use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::toolbar::Toolbar;
 use gpui_kit::component::v_flex;
 use gpui_kit::div;
@@ -131,6 +133,7 @@ impl Diffy {
                 .into_any_element();
         };
         let remote = self.is_pr();
+        let pr_loading = self.pr_state().and_then(|s| s.loading_message());
         let view = self.active_view().unwrap();
         let mode = view.diff.read(cx).mode();
         let empty = view.files.is_empty();
@@ -177,24 +180,42 @@ impl Diffy {
                     })
                     .when(remote, |toolbar| {
                         toolbar
-                            .content(
-                                div().max_w(px(320.)).truncate().text_size(px(12.)).child(
-                                    self.pr_state()
-                                        .and_then(|s| {
-                                            s.prs.iter().find(|p| Some(p.number) == s.selected)
-                                        })
-                                        .map(|p| {
-                                            format!(
-                                                "#{} · {} → {}{}",
-                                                p.number,
-                                                p.head,
-                                                p.base,
-                                                if p.draft { " · Draft" } else { "" }
-                                            )
-                                        })
-                                        .unwrap_or_else(|| "Pull requests".into()),
-                                ),
-                            )
+                            .content(if let Some(message) = pr_loading {
+                                h_flex()
+                                    .id("pr-loading-status")
+                                    .test_support()
+                                    .role(gpui_kit::Role::Status)
+                                    .aria_label(message)
+                                    .min_w_0()
+                                    .max_w(px(320.))
+                                    .gap_2()
+                                    .text_size(px(12.))
+                                    .child(Spinner::new().xsmall())
+                                    .child(div().truncate().child(message))
+                                    .into_any_element()
+                            } else {
+                                div()
+                                    .max_w(px(320.))
+                                    .truncate()
+                                    .text_size(px(12.))
+                                    .child(
+                                        self.pr_state()
+                                            .and_then(|s| {
+                                                s.prs.iter().find(|p| Some(p.number) == s.selected)
+                                            })
+                                            .map(|p| {
+                                                format!(
+                                                    "#{} · {} → {}{}",
+                                                    p.number,
+                                                    p.head,
+                                                    p.base,
+                                                    if p.draft { " · Draft" } else { "" }
+                                                )
+                                            })
+                                            .unwrap_or_else(|| "Pull requests".into()),
+                                    )
+                                    .into_any_element()
+                            })
                             .content(
                                 Button::new("open-pr-github")
                                     .ghost()
@@ -266,6 +287,7 @@ impl Diffy {
                             .ghost()
                             .small()
                             .icon(IconName::RotateCw)
+                            .loading(pr_loading.is_some())
                             .disabled(if remote {
                                 self.pr_state().is_none_or(|s| {
                                     s.listing || s.loading || s.repository.is_none()
@@ -414,16 +436,22 @@ impl Diffy {
                     .child("Unmerged file · resolve and stage outside Diffy")
             }))
             .child(if !empty && view.preview.is_none() {
-                div()
+                v_flex()
                     .flex_1()
-                    .flex()
                     .items_center()
                     .justify_center()
                     .text_color(cx.theme().muted_foreground)
+                    .gap_2()
+                    .children(pr_loading.map(|_| {
+                        div()
+                            .id("pr-loading-empty")
+                            .test_support()
+                            .child(Spinner::new().small())
+                    }))
                     .child(if view.preview_error.is_some() && !view.preview_loading {
                         "Preview unavailable"
                     } else {
-                        "Loading preview…"
+                        pr_loading.unwrap_or("Loading preview…")
                     })
                     .into_any_element()
             } else if empty {
@@ -447,8 +475,15 @@ impl Diffy {
                         .items_center()
                         .justify_center()
                         .text_color(cx.theme().muted_foreground)
+                        .gap_2()
+                        .children(pr_loading.map(|_| {
+                            div()
+                                .id("pr-loading-empty")
+                                .test_support()
+                                .child(Spinner::new().small())
+                        }))
                         .child(if remote {
-                            self.pr_empty_message()
+                            pr_loading.unwrap_or_else(|| self.pr_empty_message())
                         } else if p.loading {
                             "Reading changes…"
                         } else if p.group == ChangeGroup::Staged {
