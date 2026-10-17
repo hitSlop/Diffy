@@ -370,6 +370,33 @@ fn main() {
         window.click("import-skip", cx);
     })
     .unwrap();
+    // Discovery filtering must not prevent manually opening a temporary checkout.
+    first.write("manual.txt", "manually opened temporary project\n");
+    cx.update_window(handle, |_, window, cx| {
+        view.update(cx, |v, cx| v.open_paths(vec![paths[0].clone()], window, cx));
+        window.render_frame(cx);
+        assert_eq!(view.read(cx).project_count(), count + 2);
+    })
+    .unwrap();
+    for _ in 0..500 {
+        cx.run_until_parked();
+        let ready = cx
+            .update_window(handle, |_, window, cx| {
+                window.render_frame(cx);
+                !view.read(cx).is_busy() && view.read(cx).selected_preview_path().is_some()
+            })
+            .unwrap();
+        if ready {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    cx.update(|cx| {
+        assert_eq!(
+            view.read(cx).selected_preview_path().unwrap().as_ref(),
+            "manual.txt"
+        )
+    });
     println!(
         "Import refresh, unified ordering, selection, cancellation, and explicit import checks passed."
     );

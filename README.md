@@ -41,7 +41,7 @@ Normal launch restores repositories. The project import picker appears once, inc
 
 ## Import projects
 
-Use **Import** at the bottom of the project rail, **File → Import Projects…**, or the command palette to find local Git projects from Herdr, Codex, and Claude Code. Select the projects to add; repositories already in Diffy are marked **Already added**. Unavailable directories are hidden. Results appear once per checkout in one list, ordered by the latest tool activity; non-Git folders are hidden too. Older sessions without a stored working directory are skipped.
+Use **Import** at the bottom of the project rail, **File → Import Projects…**, or the command palette to find local Git projects from Herdr, Codex, and Claude Code. Select the projects to add; repositories already in Diffy are marked **Already added**. Unavailable directories are hidden. Results appear once per checkout in one list, ordered by the latest tool activity; non-Git folders and repositories in system temporary directories are hidden too. Temporary repositories can still be opened manually, and already-added projects are preserved. Older sessions without a stored working directory are skipped.
 
 Discovery runs when you open Import or press Refresh and shows “Pulling latest projects from Herdr, Codex, and Claude Code…” while scanning. Select projects and press **Import** to add them; discovery never adds projects on its own. Removed and unselected projects stay unselected until you explicitly choose them or open them again. Imported repositories remain in Diffy when their Herdr workspace closes or agent history disappears. Importing preserves the project you are viewing.
 

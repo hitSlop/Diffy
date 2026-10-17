@@ -127,12 +127,41 @@ impl Locations {
 }
 
 type Stamp = (u64, Option<SystemTime>);
+
+struct TemporaryRoots(Vec<PathBuf>);
+impl Default for TemporaryRoots {
+    fn default() -> Self {
+        let roots = std::iter::once(std::env::temp_dir());
+        #[cfg(unix)]
+        let roots = roots.chain(["/tmp", "/var/tmp"].map(PathBuf::from));
+        Self::new(roots)
+    }
+}
+impl TemporaryRoots {
+    fn new(roots: impl IntoIterator<Item = PathBuf>) -> Self {
+        let mut paths = BTreeSet::new();
+        for root in roots {
+            if root.is_absolute() {
+                if let Ok(canonical) = fs::canonicalize(&root) {
+                    paths.insert(canonical);
+                }
+                paths.insert(root);
+            }
+        }
+        Self(paths.into_iter().collect())
+    }
+    fn contains(&self, checkout: &Path) -> bool {
+        self.0.iter().any(|root| checkout.starts_with(root))
+    }
+}
+
 #[derive(Default)]
 pub struct Scanner {
     metadata: HashMap<PathBuf, (Stamp, Result<Vec<PathBuf>, ()>)>,
     roots: HashMap<PathBuf, (Instant, Result<PathBuf, String>)>,
     pub metadata_reads: usize,
     updated: HashMap<PathBuf, SystemTime>,
+    temporary_roots: TemporaryRoots,
 }
 impl Scanner {
     fn cached(
@@ -243,6 +272,11 @@ impl Scanner {
                 Ok(root) => (root, None),
                 Err(_) => continue,
             };
+            // Filter the resolved checkout, including cache hits: agent histories
+            // also contain disposable evaluation repos and temporary worktrees.
+            if self.temporary_roots.contains(&path) {
+                continue;
+            }
             let candidate = merged.entry(path.clone()).or_insert_with(|| Candidate {
                 repository: crate::repository::common_directory(&path).ok(),
                 path,
@@ -701,6 +735,14 @@ mod tests {
                 errors: [None, None, None],
             }
         }
+        fn scanner(&self) -> Scanner {
+            // Fixtures live in the host's temp directory. Give them their own
+            // temporary root so ordinary fixture projects remain discoverable.
+            Scanner {
+                temporary_roots: TemporaryRoots::new([self.0.join("system-temp")]),
+                ..Scanner::default()
+            }
+        }
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -709,6 +751,95 @@ mod tests {
     }
     fn codex(path: &Path) -> serde_json::Value {
         serde_json::json!({"type":"session_meta","payload":{"id":"fixture","cwd":path,"source":"cli"}})
+    }
+    #[test]
+    fn default_temporary_roots_hide_platform_temp_and_unix_aliases() {
+        let f = Fixture::new();
+        let root = f.repo("openloop-eval/runs/app");
+        f.write("codex/sessions/temp.jsonl", &codex(&root));
+        assert!(
+            Scanner::default()
+                .scan(&f.locations(), [true; 3], &AtomicBool::new(false))
+                .candidates
+                .is_empty()
+        );
+        #[cfg(unix)]
+        for alias in ["/tmp", "/var/tmp"] {
+            let roots = TemporaryRoots::default();
+            assert!(roots.contains(&Path::new(alias).join("evaluation/app")));
+            if let Ok(canonical) = fs::canonicalize(alias) {
+                assert!(roots.contains(&canonical.join("evaluation/app")));
+            }
+        }
+    }
+    #[test]
+    fn temporary_checkouts_are_hidden_across_sources_and_cached_scans() {
+        let f = Fixture::new();
+        let temporary = f.repo("system-temp/openloop-eval/runs/app");
+        let nested = temporary.join("src");
+        fs::create_dir(&nested).unwrap();
+        let ordinary = f.repo("projects/app");
+        let similar = f.repo("system-temp-project/app");
+        let named_tmp = f.repo("projects/tmp/app");
+        f.write("herdr/session.json", &serde_json::json!({"version":3,"workspaces":[{"identity_cwd":nested,"tabs":[]},{"identity_cwd":ordinary,"tabs":[]}]}));
+        for (name, path) in [
+            ("temporary", &nested),
+            ("ordinary", &ordinary),
+            ("similar", &similar),
+            ("named-tmp", &named_tmp),
+        ] {
+            f.write(&format!("codex/sessions/{name}.jsonl"), &codex(path));
+            f.write(&format!("claude/projects/example/{name}.jsonl"), &serde_json::json!({"type":"user","cwd":path,"sessionId":name,"message":{"content":"ignored"}}));
+        }
+        let mut scanner = f.scanner();
+        let cancel = AtomicBool::new(false);
+        let first = scanner.scan(&f.locations(), [true; 3], &cancel);
+        assert_eq!(
+            first
+                .candidates
+                .iter()
+                .map(|c| c.path.clone())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([ordinary.clone(), similar, named_tmp])
+        );
+        assert_eq!(
+            first
+                .candidates
+                .iter()
+                .find(|c| c.path == ordinary)
+                .unwrap()
+                .sources,
+            BTreeSet::from(Source::ALL)
+        );
+        assert!(
+            scanner.roots.contains_key(&nested),
+            "The excluded checkout's resolved root is cached too"
+        );
+        let reads = scanner.metadata_reads;
+        assert_eq!(scanner.scan(&f.locations(), [true; 3], &cancel), first);
+        assert_eq!(scanner.metadata_reads, reads);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn temporary_filter_follows_checkout_and_temp_root_symlinks() {
+        let f = Fixture::new();
+        let temporary = f.repo("system-temp/app");
+        let ordinary = f.repo("projects/app");
+        let temp_alias = f.0.join("temp-alias");
+        let checkout_alias = f.0.join("project-alias");
+        let ordinary_alias = f.0.join("system-temp/ordinary-alias");
+        std::os::unix::fs::symlink(f.0.join("system-temp"), &temp_alias).unwrap();
+        std::os::unix::fs::symlink(&temporary, &checkout_alias).unwrap();
+        std::os::unix::fs::symlink(&ordinary, &ordinary_alias).unwrap();
+        f.write("codex/sessions/temp.jsonl", &codex(&checkout_alias));
+        f.write("codex/sessions/ordinary.jsonl", &codex(&ordinary_alias));
+        let mut scanner = Scanner {
+            temporary_roots: TemporaryRoots::new([temp_alias]),
+            ..Scanner::default()
+        };
+        let snapshot = scanner.scan(&f.locations(), [true; 3], &AtomicBool::new(false));
+        assert_eq!(snapshot.candidates.len(), 1);
+        assert_eq!(snapshot.candidates[0].path, ordinary);
     }
     #[test]
     fn discovery_merges_sources_and_nested_paths_and_reuses_metadata() {
@@ -725,7 +856,7 @@ mod tests {
             "claude/projects/project/sessions-index.json",
             &serde_json::json!({"entries":[{"projectPath":root,"firstPrompt":"ignored"}]}),
         );
-        let mut scanner = Scanner::default();
+        let mut scanner = f.scanner();
         let cancel = AtomicBool::new(false);
         let snapshot = scanner.scan(&f.locations(), [true; 3], &cancel);
         assert_eq!(snapshot.candidates.len(), 1);
@@ -770,7 +901,9 @@ mod tests {
         f.write("codex/archived_sessions/good.jsonl", &codex(&root));
         let bad = f.0.join("codex/archived_sessions/bad.jsonl");
         fs::write(bad, b"{broken\n").unwrap();
-        let snapshot = Scanner::default().scan(&f.locations(), [true; 3], &AtomicBool::new(false));
+        let snapshot = f
+            .scanner()
+            .scan(&f.locations(), [true; 3], &AtomicBool::new(false));
         assert_eq!(snapshot.candidates.len(), 1);
         assert!(snapshot.errors[1].is_some());
         assert!(snapshot.errors[0].is_none());
@@ -784,7 +917,7 @@ mod tests {
         fs::create_dir(f.0.join("not-git")).unwrap();
         f.write("codex/sessions/b.jsonl", &codex(&f.0.join("not-git")));
         f.write("codex/sessions/gone.jsonl", &codex(&f.0.join("gone")));
-        let snapshot = Scanner::default().scan(
+        let snapshot = f.scanner().scan(
             &f.locations(),
             [false, true, false],
             &AtomicBool::new(false),
@@ -828,7 +961,7 @@ mod tests {
         );
         f.write("codex/sessions/a.jsonl", &codex(&root));
         f.write("codex/sessions/b.jsonl", &codex(&checkout));
-        let snapshot = Scanner::default().scan(
+        let snapshot = f.scanner().scan(
             &f.locations(),
             [false, true, false],
             &AtomicBool::new(false),
@@ -904,7 +1037,7 @@ mod tests {
         for n in 0..1000 {
             f.write(&format!("codex/sessions/{n}.jsonl"), &codex(&root));
         }
-        let mut scanner = Scanner::default();
+        let mut scanner = f.scanner();
         let cancel = AtomicBool::new(false);
         let first = scanner.scan(&f.locations(), [false, true, false], &cancel);
         assert_eq!(first.candidates.len(), 1);
@@ -941,7 +1074,7 @@ mod tests {
         modified(&old_session, 10);
         modified(&new_session, 20);
         let latest = modified(&newest_session, 30);
-        let mut scanner = Scanner::default();
+        let mut scanner = f.scanner();
         let cancel = AtomicBool::new(false);
         let scan = scanner.scan(&f.locations(), [true; 3], &cancel);
         assert_eq!(
@@ -1017,7 +1150,9 @@ mod tests {
         std::os::unix::fs::symlink(&root, &link).unwrap();
         f.write("codex/sessions/nested.jsonl", &codex(&nested));
         f.write("codex/sessions/alias.jsonl", &codex(&link));
-        let snapshot = Scanner::default().scan(&f.locations(), [true; 3], &AtomicBool::new(false));
+        let snapshot = f
+            .scanner()
+            .scan(&f.locations(), [true; 3], &AtomicBool::new(false));
         assert_eq!(snapshot.candidates.len(), 1);
         assert_eq!(snapshot.candidates[0].path, root);
     }
@@ -1045,7 +1180,7 @@ mod tests {
                 writeln!(stream, "{}", serde_json::json!({"id":"diffy-discover","result":{"snapshot":{"workspaces":[{"worktree":{"checkout_path":checkout}}]}}})).unwrap();
             }
         });
-        let mut scanner = Scanner::default();
+        let mut scanner = f.scanner();
         let cancel = AtomicBool::new(false);
         let snapshot = scanner.scan(&f.locations(), [true; 3], &cancel);
         assert_eq!(snapshot.candidates[0].path, root);
