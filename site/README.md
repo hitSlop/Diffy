@@ -1,6 +1,6 @@
 # Diffy landing page
 
-Astro static site for https://diffy.hitslop.com. The page uses Commit Mono and a compact, responsive hero banner from `src/assets/hero.png`, with one small bundled script for the cursor-following SVG eye. It has no tracking or payment verification. Touch devices, reduced-motion users, and JavaScript failures keep the original static artwork. Animation stops when settled or offscreen.
+Astro static site for https://diffy.run. The page uses Commit Mono and a compact, responsive hero banner from `src/assets/hero.png`, with one small bundled script for the cursor-following SVG eye. It has no tracking or payment verification. Touch devices, reduced-motion users, and JavaScript failures keep the original static artwork. Animation stops when settled or offscreen.
 
 ```sh
 cd site
@@ -14,7 +14,7 @@ npm run preview
 
 Set `DODO_CHECKOUT_URL` to the HTTPS hosted product checkout URL (for example `https://checkout.dodopayments.com/buy/pdt_example`) at build time. Do not set a private API key. Without the URL, the purchase button is disabled and shows “Checkout coming soon.”
 
-Configure a one-time USD $14.99 product in Dodo. The build sets the checkout return URL to `https://diffy.hitslop.com/thanks`. Put `https://diffy.hitslop.com/downloads` in a Digital Files entitlement's external delivery link and attach it to the product as well, so buyers can keep it. Dodo setup remains manual until the product is ready.
+Configure a one-time USD $14.99 product in Dodo. The build sets the checkout return URL to `https://diffy.run/thanks`. Put `https://diffy.run/downloads` in a Digital Files entitlement's external delivery link and attach it to the product as well, so buyers can keep it. Dodo setup remains manual until the product is ready.
 
 ```sh
 DODO_CHECKOUT_URL='https://checkout.dodopayments.com/buy/YOUR_PRODUCT_ID' npm run build
@@ -46,7 +46,13 @@ Production builds separately from the test matrix, so the placeholder checkout U
 
 The commands above remain available for manual deployment with your existing local Wrangler login. Rebuild with the correct production checkout setting before uploading; never deploy an artifact built with the CI checkout fixture.
 
-Associate `diffy.hitslop.com` in the Pages project's custom domains, then point its DNS CNAME at the project's Pages hostname. Cloudflare must register the custom domain before its DNS redirect can work.
+Keep domain registration at Namecheap and use Cloudflare DNS for `diffy.run`. Associate `diffy.run` in the Pages project's custom domains, then point its proxied apex CNAME at `diffy-site.pages.dev`. The Pages custom-domain association is required in addition to DNS. `www.diffy.run` redirects to the apex, preserving paths and query strings. The former subdomain has been retired without a redirect.
+
+## Crawlers and product facts
+
+The site is prerendered HTML; product information and download instructions do not require JavaScript. `robots.txt` allows all crawlers and advertises `/sitemap.xml`. Keep Cloudflare's Search, Agent, and Training crawler policies set to Allow, with no AI crawler paywall or bot challenges on public documentation.
+
+`src/data/product.ts` supplies the product definition, visible questions, and `/llms-full.txt`; `/llms.txt` links to the canonical documentation. These text endpoints are an additional convenience for assistants, not a ranking guarantee. `/sitemap.xml` includes the homepage and downloads; `/thanks` and the error page use `noindex, follow`. JSON-LD describes the publisher, website, pages, and software application using factual capabilities, with no fabricated reviews or unavailable purchase offers. Update the shared facts when availability or pricing changes.
 
 The post-build `scripts/write-redirects.mjs` generates `dist/_redirects` from the same platform metadata used by the pages. `/download` retains its macOS behavior. `/download/macos`, `/download/windows`, and `/download/linux` use fixed-name assets in GitHub's latest release; unavailable targets redirect to `/downloads` instead. The release script creates an identical copy of the signed and notarized versioned DMG. Upload it with every release; never point the website at an unsigned build.
 
@@ -64,7 +70,7 @@ The landing page displays regular price $24.99 crossed out and $14.99 during bet
 
 ## Dodo dashboard setup
 
-No Dodo CLI or product is configured for this repository. Create one **Diffy — all desktop platforms** product with a one-time **USD $14.99** price (1499 cents), covering macOS beta and Windows/Linux alpha. Create a Digital Files entitlement named **Diffy downloads**, set its external link to **https://diffy.hitslop.com/downloads**, and attach it to the product. Suggested delivery instructions:
+No Dodo CLI or product is configured for this repository. Create one **Diffy — all desktop platforms** product with a one-time **USD $14.99** price (1499 cents), covering macOS beta and Windows/Linux alpha. Create a Digital Files entitlement named **Diffy downloads**, set its external link to **https://diffy.run/downloads**, and attach it to the product. Suggested delivery instructions:
 
 > Choose your platform on the download page. All versions require Git. macOS is beta; Windows and Linux are early alphas with limited hardware testing. Save the page for future releases.
 

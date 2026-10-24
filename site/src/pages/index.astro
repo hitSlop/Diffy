@@ -1,6 +1,7 @@
 ---
 import Page from '../layouts/Page.astro';
 import Mascot from '../components/Mascot.astro';
+import { summary, questions } from '../data/product';
 import { platforms, price } from '../data/releases';
 import { getImage } from 'astro:assets';
 import screenshot from '../../public/diffy.webp';
@@ -13,16 +14,15 @@ if (checkout) {
   if (url.protocol !== 'https:' || url.hostname !== 'checkout.dodopayments.com') {
     throw new Error('DODO_CHECKOUT_URL must be an HTTPS Dodo hosted checkout URL.');
   }
-  url.searchParams.set('redirect_url', 'https://diffy.hitslop.com/thanks');
+  url.searchParams.set('redirect_url', new URL('/thanks', Astro.site).href);
   purchaseUrl = url.href;
 }
 ---
-<Page>
+<Page applicationSchema>
   <main id="main">
     <section class="hero frame" aria-labelledby="hero-title">
-      <h1 id="hero-title" class="visually-hidden">Diffy — i literally only show you diffs</h1>
       <Mascot />
-      <p class="intro">A native Git diff viewer, built in Rust.</p>
+      <h1 id="hero-title" class="intro">Diffy — a native Git diff viewer, built in Rust.</h1>
       <p class="agent-line">Keep up with your agents’ changes.</p>
       <ul class="hero-badges" aria-label="Highlights">
         <li>Freakishly fast</li>
@@ -45,6 +45,7 @@ if (checkout) {
     </figure>
     <section class="features frame" aria-labelledby="features-title">
       <h2 id="features-title">A few things it does.</h2>
+      <p class="product-summary">{summary}</p>
       <dl>
         <div class="feature-row">
           <dt>Keep your worktrees together.</dt>
@@ -86,6 +87,11 @@ if (checkout) {
           <dd><p>No changes yet? Play a little Snake in the empty diff pane. Press Enter to start or pause, and steer with the arrow keys.</p></dd>
         </div>
       </dl>
+    </section>
+    <section class="features questions frame" aria-labelledby="questions-title">
+      <h2 id="questions-title">Before you download.</h2>
+      {questions.map(({ question, answer }) => <section class="product-question"><h3>{question}</h3><p>{answer}</p></section>)}
+      <p class="product-summary"><a href="/downloads">Downloads and installation ↗</a></p>
     </section>
   </main>
 </Page>

@@ -7,7 +7,7 @@ assert(home.includes('<s>$24.99</s>') && home.includes('during beta'));
 assert(!home.includes('Downloads &amp; installation') && !home.includes('Diffy is in beta.'));
 const checkout = process.env.DODO_CHECKOUT_URL;
 assert.equal(home.includes('checkout.dodopayments.com/buy/'), !!checkout);
-if (checkout) assert(home.includes('redirect_url=https%3A%2F%2Fdiffy.hitslop.com%2Fthanks'));
+if (checkout) assert(home.includes('redirect_url=https%3A%2F%2Fdiffy.run%2Fthanks'));
 const published = new Set((process.env.DIFFY_RELEASED_PLATFORMS || 'macos').split(','));
 const redirects = read('_redirects');
 for (const page of ['downloads/index.html', 'thanks/index.html']) {
@@ -21,4 +21,37 @@ for (const page of ['downloads/index.html', 'thanks/index.html']) {
   }
 }
 assert(redirects.includes('/download https://github.com/hitSlop/diffy/releases/latest/download/Diffy-macos-aarch64.dmg 302'));
-console.log('Pricing, checkout, platform availability, and redirects verified.');
+for (const [page, path] of [['index.html', '/'], ['downloads/index.html', '/downloads'], ['thanks/index.html', '/thanks']]) {
+  const html = read(page);
+  assert(!html.includes('diffy.hitslop.com'));
+  assert(html.includes(`<link rel="canonical" href="https://diffy.run${path}"`));
+  assert(html.includes('content="https://diffy.run/_astro/'));
+  assert.equal(html.includes('noindex, follow'), path === '/thanks');
+}
+const schema = JSON.parse(home.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1]);
+const app = schema['@graph'].find(entity => entity['@type'] === 'SoftwareApplication');
+assert.equal(app.url, 'https://diffy.run/');
+assert.deepEqual(app.operatingSystem, ['macOS', 'Windows', 'Linux']);
+assert(app.sameAs.includes('https://github.com/hitSlop/Diffy'));
+assert(!app.offers && !app.aggregateRating);
+assert(home.includes('Diffy is a native Git diff viewer built in Rust with GPUI Kit.'));
+const robots = read('robots.txt');
+assert(robots.includes('User-agent: *\nAllow: /'));
+assert(robots.includes('Sitemap: https://diffy.run/sitemap.xml'));
+const sitemap = read('sitemap.xml');
+assert(sitemap.includes('<loc>https://diffy.run/</loc>'));
+assert(sitemap.includes('<loc>https://diffy.run/downloads</loc>'));
+assert(!sitemap.includes('thanks') && !sitemap.includes('404'));
+for (const file of ['llms.txt', 'llms-full.txt']) {
+  const markdown = read(file);
+  assert(markdown.startsWith('# Diffy\n'));
+  assert(markdown.includes('https://diffy.run/downloads'));
+  assert(!markdown.includes('diffy.hitslop.com'));
+}
+const full = read('llms-full.txt');
+assert.equal(full.includes('Checkout is not yet available.'), !checkout);
+for (const platform of ['macos', 'windows', 'linux']) {
+  assert.equal(full.includes(`/downloads#${platform}`), published.has(platform));
+}
+assert(read('404.html').includes('noindex, follow'));
+console.log('Pricing, checkout, downloads, canonical URLs, crawler access, schema, sitemap, and AI documentation verified.');

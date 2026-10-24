@@ -1,6 +1,6 @@
 # <img src="assets/icon/icon.iconset/icon_128x128.png" alt="Diffy chameleon" width="40" height="40" align="middle"> Diffy
 
-[Downloads and installation](https://diffy.hitslop.com/downloads) · macOS **beta** · Windows/Linux **alpha**
+[Downloads and installation](https://diffy.run/downloads) · macOS **beta** · Windows/Linux **alpha**
 
 ![Diffy on macOS: a split Rust diff, project change badges, a searchable file list grouped by directory, and project import](assets/screenshot.png)
 
