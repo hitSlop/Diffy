@@ -21,12 +21,12 @@ for (const page of ['downloads/index.html', 'thanks/index.html']) {
   }
 }
 assert(redirects.includes('/download https://github.com/hitSlop/diffy/releases/latest/download/Diffy-macos-aarch64.dmg 302'));
-for (const [page, path] of [['index.html', '/'], ['downloads/index.html', '/downloads'], ['thanks/index.html', '/thanks']]) {
+for (const [page, path] of [['index.html', '/'], ['downloads/index.html', '/downloads/'], ['thanks/index.html', '/thanks/']]) {
   const html = read(page);
   assert(!html.includes('diffy.hitslop.com'));
   assert(html.includes(`<link rel="canonical" href="https://diffy.run${path}"`));
   assert(html.includes('content="https://diffy.run/_astro/'));
-  assert.equal(html.includes('noindex, follow'), path === '/thanks');
+  assert.equal(html.includes('noindex, follow'), path === '/thanks/');
 }
 const schema = JSON.parse(home.match(/<script type="application\/ld\+json">(.*?)<\/script>/s)[1]);
 const app = schema['@graph'].find(entity => entity['@type'] === 'SoftwareApplication');
@@ -40,7 +40,7 @@ assert(robots.includes('User-agent: *\nAllow: /'));
 assert(robots.includes('Sitemap: https://diffy.run/sitemap.xml'));
 const sitemap = read('sitemap.xml');
 assert(sitemap.includes('<loc>https://diffy.run/</loc>'));
-assert(sitemap.includes('<loc>https://diffy.run/downloads</loc>'));
+assert(sitemap.includes('<loc>https://diffy.run/downloads/</loc>'));
 assert(!sitemap.includes('thanks') && !sitemap.includes('404'));
 for (const file of ['llms.txt', 'llms-full.txt']) {
   const markdown = read(file);
@@ -51,7 +51,7 @@ for (const file of ['llms.txt', 'llms-full.txt']) {
 const full = read('llms-full.txt');
 assert.equal(full.includes('Checkout is not yet available.'), !checkout);
 for (const platform of ['macos', 'windows', 'linux']) {
-  assert.equal(full.includes(`/downloads#${platform}`), published.has(platform));
+  assert.equal(full.includes(`/downloads/#${platform}`), published.has(platform));
 }
 assert(read('404.html').includes('noindex, follow'));
 console.log('Pricing, checkout, downloads, canonical URLs, crawler access, schema, sitemap, and AI documentation verified.');
