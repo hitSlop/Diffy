@@ -4,7 +4,7 @@ import socialImage from '../assets/hero.png';
 import { summary, source } from '../data/product';
 import { platforms } from '../data/releases';
 const { title = 'Diffy — native Git diff viewer for macOS, Windows & Linux', description = summary, applicationSchema = false, noindex = false } = Astro.props;
-const canonical = new URL(Astro.url.pathname.replace(/\/+$/, '') || '/', Astro.site);
+const canonical = new URL(Astro.url.pathname, Astro.site);
 const root = new URL('/', Astro.site).href;
 const schema = {
   '@context': 'https://schema.org',
@@ -12,7 +12,7 @@ const schema = {
     { '@type': 'Organization', '@id': `${root}#publisher`, name: 'hitSlop', url: 'https://labs.hitslop.com' },
     { '@type': 'WebSite', '@id': `${root}#website`, name: 'Diffy', url: root, publisher: { '@id': `${root}#publisher` }, inLanguage: 'en' },
     { '@type': 'WebPage', '@id': `${canonical}#page`, url: canonical.href, name: title, description, isPartOf: { '@id': `${root}#website` }, ...(applicationSchema ? { mainEntity: { '@id': `${root}#app` } } : {}) },
-    ...(applicationSchema ? [{ '@type': 'SoftwareApplication', '@id': `${root}#app`, name: 'Diffy', url: root, description: summary, applicationCategory: 'DeveloperApplication', operatingSystem: platforms.map(platform => platform.name), publisher: { '@id': `${root}#publisher` }, sameAs: [source], license: 'https://opensource.org/license/mit', screenshot: new URL('/diffy.webp', root).href, downloadUrl: new URL('/downloads', root).href, featureList: ['Live Git diffs', 'Split and unified views', 'Git worktree tabs', 'Read-only GitHub pull request diffs', 'Whole-file staging and unstaging', 'Project discovery from Herdr, Codex, and Claude Code'] }] : []),
+    ...(applicationSchema ? [{ '@type': 'SoftwareApplication', '@id': `${root}#app`, name: 'Diffy', url: root, description: summary, applicationCategory: 'DeveloperApplication', operatingSystem: platforms.map(platform => platform.name), publisher: { '@id': `${root}#publisher` }, sameAs: [source], license: 'https://opensource.org/license/mit', screenshot: new URL('/diffy.webp', root).href, downloadUrl: new URL('/downloads/', root).href, featureList: ['Live Git diffs', 'Split and unified views', 'Git worktree tabs', 'Read-only GitHub pull request diffs', 'Whole-file staging and unstaging', 'Project discovery from Herdr, Codex, and Claude Code'] }] : []),
   ],
 };
 const socialImageUrl = new URL(socialImage.src, Astro.site);
