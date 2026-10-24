@@ -67,7 +67,7 @@ gh release create v0.2.3 --repo hitSlop/diffy --draft --verify-tag \
 
 The manifest archive URL points to its immutable version tag. The app checks `releases/latest/download/update-macos-aarch64.json`, so draft releases are intentionally invisible to automatic checks. Publish only after release verification and explicit release authorization.
 
-Always upload the fixed-name DMG with every release. The website redirects `https://diffy.hitslop.com/download` to GitHub's latest published release asset with that name. Include both DMGs in `SHA256SUMS`; retain the versioned app archive and manifest used by in-app updates.
+Always upload the fixed-name DMG with every release. The website redirects `https://diffy.run/download` to GitHub's latest published release asset with that name. Include both DMGs in `SHA256SUMS`; retain the versioned app archive and manifest used by in-app updates.
 
 ## Update verification
 

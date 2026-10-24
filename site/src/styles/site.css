@@ -436,6 +436,16 @@ h1 {
 .features dl {
   margin: 0;
 }
+.product-summary {
+  color: #a7a7ac;
+  font-size: 12px;
+  line-height: 1.95;
+  margin: 0 0 36px;
+  max-width: 76ch;
+}
+.product-question { margin-bottom: 28px; }
+.product-question h3 { font-size: 13px; font-weight: 500; line-height: 1.9; margin: 0 0 7px; }
+.product-question p { color: #a7a7ac; font-size: 12px; line-height: 1.95; margin: 0; max-width: 76ch; }
 .feature-row {
   display: grid;
   grid-template-columns: 245px minmax(0, 1fr);
