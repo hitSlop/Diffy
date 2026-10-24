@@ -4,7 +4,7 @@
 
 ![Diffy on macOS: a split Rust diff, project change badges, a searchable file list grouped by directory, and project import](assets/screenshot.png)
 
-A small native Rust/GPUI Kit diff viewer. macOS is in beta; Windows and Linux are early alphas with limited hardware testing. One purchase supports every platform: **$14.99 during beta**, regular price ~~$24.99~~. Windows/Linux download links become available after release validation and publication.
+A small native Rust/GPUI Kit diff viewer. macOS is in beta; Windows and Linux are early alphas with limited hardware testing.
 
 - Pure-black surfaces and colored squircle project icons that grow gently on hover. Badges count unique changed files across Staged and Changes (partially staged files count once).
 - Bundled Commit Mono Regular and Medium throughout the app, with programming ligatures disabled.
