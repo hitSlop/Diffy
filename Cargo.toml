@@ -38,7 +38,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
 sha2 = "=0.10.9"
 url = "=2.5.8"
-gpui-kit = { version = "=0.7.3", features = ["tree-sitter-rust", "tree-sitter-typescript", "tree-sitter-javascript", "tree-sitter-toml", "tree-sitter-markdown"] }
+gpui-kit = { version = "=0.7.3", features = ["tree-sitter-languages"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "=0.6.5"

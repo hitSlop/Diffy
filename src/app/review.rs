@@ -608,4 +608,31 @@ mod tests {
         );
         assert!(filter_paths(&paths, "zzzz-no-such", &mut matcher, &mut buf).is_empty());
     }
+
+    #[test]
+    fn diffs_highlight_every_detected_language() {
+        let registry = gpui_kit::component::highlighter::LanguageRegistry::singleton();
+        for path in [
+            "src/Kernel.php",
+            "scripts/sign.sh",
+            "compose.yaml",
+            "config/app.yml",
+            "package.json",
+            "app.py",
+            "main.go",
+            "schema.sql",
+            "styles.css",
+            "index.html",
+            "Makefile",
+            "src/main.rs",
+        ] {
+            let patch = format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-a\n+b\n");
+            let file = DiffFile::parse(&patch).unwrap().remove(0);
+            assert!(
+                registry.language(&file.language()).is_some(),
+                "no grammar for {path} ({})",
+                file.language()
+            );
+        }
+    }
 }
