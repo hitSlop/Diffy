@@ -20,7 +20,6 @@
   --quiet: #737379;
 }
 .beta-price { font-size: 14px; margin: 0 0 16px; color: var(--muted); }
-.beta-price s { margin-right: 10px; }
 .beta-price strong { font-size: 22px; font-weight: 500; color: #fff; }
 .platform-downloads { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; margin: 48px 0; text-align: left; }
 .platform-download { min-width: 0; padding-top: 20px; border-top: 1px solid #303033; scroll-margin-top: 24px; }

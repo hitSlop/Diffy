@@ -6,7 +6,7 @@ export const questions = [
   { question: 'Which platforms does Diffy support?', answer: 'Diffy supports macOS, Windows, and Linux. macOS is in beta; Windows and Linux are early alphas with limited hardware testing. Every platform requires Git.' },
   { question: 'Does Diffy work with coding agents?', answer: 'Diffy discovers local Git projects from Herdr, Codex, and Claude Code. Choose which projects to import, then review their live file changes. Discovery reads local project metadata; it does not run agents or read their conversations.' },
   { question: 'Can Diffy review GitHub pull requests?', answer: 'Yes. Diffy shows read-only diffs for open and draft GitHub.com pull requests using your existing GitHub CLI login. It does not check out a branch. Review comments, approvals, merging, and GitHub Enterprise are not supported.' },
-  { question: 'Is Diffy open source, and what does it cost?', answer: `Diffy is open source under the MIT license and can be built for free. The suggested one-time purchase is ${price.beta} during beta (regular price ${price.regular}) and supports all platforms. Public downloads are not payment gated.${import.meta.env.DODO_CHECKOUT_URL?.trim() ? '' : ' Checkout is not yet available.'}` },
+  { question: 'Is Diffy open source, and what does it cost?', answer: `Diffy is open source under the MIT license and can be built for free. The suggested one-time purchase is ${price.beta} USD during beta and supports all platforms. Public downloads are not payment gated.${import.meta.env.DODO_CHECKOUT_URL?.trim() ? '' : ' Checkout is not yet available.'}` },
 ];
 
 export function productMarkdown(root: string) {
