@@ -14,7 +14,7 @@ npm run preview
 
 Set `DODO_CHECKOUT_URL` to the HTTPS hosted product checkout URL (for example `https://checkout.dodopayments.com/buy/pdt_example`) at build time. Do not set a private API key. Without the URL, the purchase button is disabled and shows “Checkout coming soon.”
 
-Configure a one-time USD $12.99 product in Dodo. The build sets the checkout return URL to `https://diffy.run/thanks`. Put `https://diffy.run/downloads` in a Digital Files entitlement's external delivery link and attach it to the product as well, so buyers can keep it. The live product and its download entitlement are configured.
+Configure a one-time USD $7.99 product in Dodo. The build sets the checkout return URL to `https://diffy.run/thanks`. Put `https://diffy.run/downloads` in a Digital Files entitlement's external delivery link and attach it to the product as well, so buyers can keep it. The live product and its download entitlement are configured.
 
 ```sh
 DODO_CHECKOUT_URL='https://checkout.dodopayments.com/buy/YOUR_PRODUCT_ID' npm run build
@@ -62,7 +62,7 @@ The screenshot serves 480/960/1440px variants through `srcset`; the original 192
 
 ## Beta pricing and platform availability
 
-The landing page displays regular price $24.99 crossed out and $12.99 during beta. It keeps the purchase CTA and “Or build for free”; platform downloads are offered after purchase on `/thanks` and through Dodo delivery. There is no separate beta announcement line. macOS is Beta; Windows/Linux are Alpha. The purchase supports all platforms. Keep the Dodo product's actual one-time USD price at 1299 cents to match the site.
+The landing page displays $7.99 USD during beta, without a comparison price. It keeps the purchase CTA and “Or build for free”; platform downloads are offered after purchase on `/thanks` and through Dodo delivery. There is no separate beta announcement line. macOS is Beta; Windows/Linux are Alpha. The purchase supports all platforms. Keep the Dodo product's actual one-time USD price at 799 cents to match the site.
 
 `src/data/platforms.json` supplies download choices, requirements, asset names, and installation instructions for `/downloads` and `/thanks`. `DIFFY_RELEASED_PLATFORMS` is a comma-separated list of published platforms, default `macos`. After the complete release is verified and published, set the GitHub repository variable to `macos,windows,linux` and rebuild the site. Keep it at `macos` until then; the site never advertises missing assets.
 
@@ -70,8 +70,8 @@ The landing page displays regular price $24.99 crossed out and $12.99 during bet
 
 ## Dodo dashboard setup
 
-The live product ID is `pdt_0NqoFXz9I2D2slqhYL42T`; its Digital Files entitlement ID is `ent_0NqoFXuK7ZzeWUnnHUAMW`. This is one **Diffy — all desktop platforms** product with a one-time **USD $12.99** price (1299 cents), covering macOS beta and Windows/Linux alpha. Its attached Digital Files entitlement is named **Diffy downloads**, with its external link set to **https://diffy.run/downloads**, and these delivery instructions:
+The live product ID is `pdt_0NqoFXz9I2D2slqhYL42T`; its Digital Files entitlement ID is `ent_0NqoFXuK7ZzeWUnnHUAMW`. This is one **Diffy — all desktop platforms** product with a one-time **USD $7.99** price (799 cents), covering macOS beta and Windows/Linux alpha. Its attached Digital Files entitlement is named **Diffy downloads**, with its external link set to **https://diffy.run/downloads**, and these delivery instructions:
 
 > Choose your platform on the download page. All versions require Git. macOS is beta; Windows and Linux are early alphas with limited hardware testing. Save the page for future releases.
 
-Copy the hosted `https://checkout.dodopayments.com/buy/pdt_0NqoFXz9I2D2slqhYL42T` URL into the GitHub `DODO_CHECKOUT_URL` repository variable. The site adds the return URL `/thanks`. Keep checkout disabled until the product exists and its displayed charge matches $12.99. Public downloads and the return page do not verify payment or grant a license.
+Copy the hosted `https://checkout.dodopayments.com/buy/pdt_0NqoFXz9I2D2slqhYL42T` URL into the GitHub `DODO_CHECKOUT_URL` repository variable. The site adds the return URL `/thanks`. Keep checkout disabled until the product exists and its displayed charge matches $7.99. Public downloads and the return page do not verify payment or grant a license.

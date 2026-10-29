@@ -30,7 +30,7 @@ if (checkout) {
       </ul>
       <p class="compatibility">{platforms.map((platform, index) => <>{index > 0 && <span aria-hidden="true"> · </span>}{platform.name} {platform.stage.toLowerCase()}</>)} <span aria-hidden="true">·</span> Requires Git</p>
       <div class="purchase">
-        <p class="beta-price"><span class="visually-hidden">Regular price </span><s>{price.regular}</s> <strong>{price.beta}</strong><span> USD during beta</span></p>
+        <p class="beta-price"><strong>{price.beta}</strong><span> USD during beta</span></p>
         {purchaseUrl ? <a target="_blank" rel="noopener" class="button" href={purchaseUrl}>Buy once <span aria-hidden="true">—</span> {price.beta} <span class="button-arrow" aria-hidden="true">↗</span></a> : <button class="button" disabled aria-describedby="checkout-note">Buy once <span aria-hidden="true">—</span> {price.beta} <span class="button-arrow" aria-hidden="true">↗</span></button>}
         {!purchaseUrl && <p id="checkout-note" class="checkout-note">Checkout coming soon.</p>}
         <a target="_blank" rel="noopener" class="build-link" href="https://github.com/hitSlop/Diffy">Or build for free <span aria-hidden="true">↗</span></a>
