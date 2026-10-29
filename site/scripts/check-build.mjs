@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const read = path => readFileSync(new URL(`../dist/${path}`, import.meta.url), 'utf8');
 const home = read('index.html');
-assert(home.includes('$14.99') && home.includes('$24.99') && !home.includes('$19.99'));
+assert(home.includes('$12.99') && home.includes('$24.99') && !home.includes('$19.99') && !home.includes('$14.99'));
 assert(home.includes('<s>$24.99</s>') && home.includes('during beta'));
 assert(!home.includes('Downloads &amp; installation') && !home.includes('Diffy is in beta.'));
 const checkout = process.env.DODO_CHECKOUT_URL;

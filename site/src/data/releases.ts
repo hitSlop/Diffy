@@ -1,4 +1,4 @@
 import definitions from './platforms.json';
 const published = new Set((import.meta.env.DIFFY_RELEASED_PLATFORMS || 'macos').split(',').map((value: string) => value.trim()));
 export const platforms = definitions.map(platform => ({ ...platform, available: published.has(platform.id), href: `/download/${platform.id}` }));
-export const price = { regular: '$24.99', beta: '$14.99' };
+export const price = { regular: '$24.99', beta: '$12.99' };
